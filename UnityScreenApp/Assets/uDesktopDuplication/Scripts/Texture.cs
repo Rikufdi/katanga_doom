@@ -3,6 +3,7 @@
 namespace uDesktopDuplication
 {
 
+[RequireComponent(typeof(Renderer))]
 [AddComponentMenu("uDesktopDuplication/Texture")] 
 public class Texture : MonoBehaviour
 {
@@ -192,6 +193,7 @@ public class Texture : MonoBehaviour
 
     public float radius
     {
+        // Katanga: shader2D has none of these uDD shader properties.
         //get { return material.GetFloat("_Radius"); }
         //set { material.SetFloat("_Radius", value); }
         get { return 0; }

@@ -1,263 +1,107 @@
-﻿using UnityEngine;
-using System.Collections;
 using System;
+using System.Collections;
+using UnityEngine;
 
-namespace Valve.VR.InteractionSystem.Sample
+// Floating help text next to each VR controller.
+//
+// The SteamVR Interaction System used to draw these hints on the controller render
+// models.  OpenXR has no render models, so we attach a small text label to each hand
+// instead, which works the same on every runtime.  Right A (or menu) toggles them,
+// and the choice is saved.
+
+public class ControllerHints : MonoBehaviour
 {
-    //-------------------------------------------------------------------------
-    public class ControllerHints : MonoBehaviour
+    public Transform leftHand;
+    public Transform rightHand;
+
+    private GameObject leftHint;
+    private GameObject rightHint;
+    private bool showing;
+
+    private IEnumerator Start()
     {
-        // hintAction is attached in RightHand Controller under Player
-        public SteamVR_Action_Boolean hintAction;
-        public Hand hand;
-        public ControllerButtonHints hintController;
+        KatangaInput.Enable();
 
-        private Coroutine buttonHintCoroutine;
-        private Coroutine textHintCoroutine;
+        // Wait a frame so LaunchAndPlay has parsed the command line and set slideshowMode.
+        yield return null;
 
-        private bool showing;
+        leftHint = CreateLabel(leftHand, LeftText());
+        rightHint = CreateLabel(rightHand, RightText());
 
+        showing = Convert.ToBoolean(PlayerPrefs.GetInt("hints", 1));
+        UpdateHints();
+    }
 
-        //-------------------------------------------------
-        private void Start()
+    private void Update()
+    {
+        if (leftHint == null && rightHint == null)
+            return;
+
+        if (KatangaInput.ToggleHints.WasPressedThisFrame())
         {
-            hintAction.AddOnChangeListener(OnToggleActionChange, hand.handType);
-
-            Int32 showHints = PlayerPrefs.GetInt("hints", 1);
-            showing = Convert.ToBoolean(showHints);
-
-            StartCoroutine(WaitForInitialize());
-        }
-
-        private void OnApplicationQuit()
-        {
-            if (hintAction != null)
-                hintAction.RemoveOnChangeListener(OnToggleActionChange, hand.handType);
-        }
-
-        // Always start with the hint showing, by default, but if the user has specifically
-        // turned them off, then restore that as their preference.
-        //
-        // This is complicated by how late the ControllerButtonHints is initialized.
-        // Until it processes the hint info via the bound actions, it will fail to show.
-        // So, we'll loop here, waiting for that init to happen.  This will also allow
-        // us to properly show the help/hints whenever the controller is turned on,
-        // so it does not need to be active when launched.  
-
-        IEnumerator WaitForInitialize()
-        {
-            while (hintController.initialized == false)
-                yield return null;
-
-            if (showing)
-                ShowTextHints(hand);
-        }
-
-        //-------------------------------------------------
-        private void OnToggleActionChange(SteamVR_Action_Boolean actionIn, SteamVR_Input_Sources inputSource, bool newValue)
-        {
-            if (showing)
-            {
-                DisableHints();
-                showing = false;
-            }
-            else
-            {
-                ShowTextHints(hand);
-                showing = true;
-            }
-
+            showing = !showing;
             PlayerPrefs.SetInt("hints", Convert.ToInt32(showing));
+            UpdateHints();
         }
+    }
 
+    private void UpdateHints()
+    {
+        if (leftHint != null)
+            leftHint.SetActive(showing);
+        if (rightHint != null)
+            rightHint.SetActive(showing);
+    }
 
-        //-------------------------------------------------
-        public void ShowButtonHints(Hand hand)
-        {
-            if (buttonHintCoroutine != null)
-            {
-                StopCoroutine(buttonHintCoroutine);
-            }
-            buttonHintCoroutine = StartCoroutine(TestButtonHints(hand));
-        }
+    private static string LeftText()
+    {
+        string text = "Stick up/down: Screen higher/lower\n" +
+                      "Stick left/right: Screen smaller/bigger\n" +
+                      "Trigger: Cycle environment\n" +
+                      "X/A or Menu: Sharpen / FSR upscale";
+        if (Game.slideshowMode)
+            text += "\nGrip: Next slide";
+        return text;
+    }
 
+    private static string RightText()
+    {
+        string text = "Stick up/down: Screen farther/nearer\n" +
+                      "Stick left/right: Flatten/curve screen\n" +
+                      "Trigger: Recenter screen\n" +
+                      "A or Menu: Show/hide help";
+        if (Game.slideshowMode)
+            text += "\nGrip (hold): Pause slideshow";
+        return text;
+    }
 
-        //-------------------------------------------------
-        public void ShowTextHints(Hand hand)
-        {
-            //if (textHintCoroutine != null)
-            //{
-            //    StopCoroutine(textHintCoroutine);
-            //}
-            //textHintCoroutine = StartCoroutine(TestTextHints(hand));
+    // Small billboard-less TextMesh sitting just above the controller, tilted toward
+    // the user.  TextMesh keeps this independent of any UI canvas setup.
 
-            // This script is only attached to the right hand, but we want to display
-            // help for both hands.
-            Hand rightHand = (hand.handType == SteamVR_Input_Sources.RightHand) ? hand : hand.otherHand;
-            Hand leftHand = (hand.handType == SteamVR_Input_Sources.LeftHand) ? hand : hand.otherHand;
+    private static GameObject CreateLabel(Transform hand, string text)
+    {
+        if (hand == null)
+            return null;
 
-            // Look through the actions registered, and see if we can determine which controller is active.
-            // We want to tweak the help text slightly for different controllers, because otherwise it's a
-            // real visual mess.  We showLeftRight only for Vive and Oculus, because they need to overload
-            // the right dpad or joystick.
-            bool showLeftRight = true;
+        GameObject label = new GameObject("Hint");
+        label.transform.SetParent(hand, false);
+        label.transform.localPosition = new Vector3(0.0f, 0.06f, 0.02f);
+        label.transform.localRotation = Quaternion.Euler(45.0f, 0.0f, 0.0f);
+        label.transform.localScale = Vector3.one * 0.006f;
 
-            Debug.Log("List of active controllers:");
-            foreach (SteamVR_Action_Boolean action in SteamVR_Input.actionsBoolean)
-            {
-                string type = SteamVR_Input.GetLocalizedName(action.activeOrigin, EVRInputStringBits.VRInputString_ControllerType);
-                Debug.Log(" " + type);
-                if (string.Equals(type, "holographic_controller") || string.Equals(type, "Index Controller"))
-                {
-                    showLeftRight = false;
-                    break;
-                }
-            }
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // We only have boolean actions, so sift through the array of these to put
-            // proper names on them.  There is no API to fetch the LocalizedString from the actions.
+        TextMesh mesh = label.AddComponent<TextMesh>();
+        mesh.text = text;
+        mesh.font = font;
+        mesh.fontSize = 48;
+        mesh.characterSize = 0.25f;
+        mesh.anchor = TextAnchor.LowerCenter;
+        mesh.alignment = TextAlignment.Left;
+        mesh.color = new Color(0.9f, 0.9f, 0.9f, 1.0f);
 
-            foreach (SteamVR_Action_Boolean action in SteamVR_Input.actionsBoolean)
-            {
-                switch (action.GetShortName())
-                {    
-                    case "ToggleHintAction":
-                        ControllerButtonHints.ShowTextHint(rightHand, action, "Show/Hide Help");
-                        break;
+        label.GetComponent<MeshRenderer>().sharedMaterial = font.material;
 
-                    case "ToggleSharpeningAction":
-                        ControllerButtonHints.ShowTextHint(leftHand, action, "Sharpening On/Off");
-                        break;
-
-                    // For RightHand action, we'll look for single action to show the text
-                    // for the dpad controls.  ControllerButtonHints does not support dpad specific 
-                    // names, so we need one text for the whole dpad.
-                    case "RecenterAction":
-                        ControllerButtonHints.ShowTextHint(rightHand, action, "Recenter Screen");
-                        break;
-                    case "ScreenFartherAction":
-                        if (showLeftRight)
-                            ControllerButtonHints.ShowTextHint(rightHand, action, "Up: Screen Farther\nDown: Screen Nearer\nLeft: Flatten Screen\nRight: Curve Screen");
-                        else
-                            ControllerButtonHints.ShowTextHint(rightHand, action, "Up: Screen Farther\nDown: Screen Nearer");
-                        break;
-                    case "CurveScreenAction":
-                        if (!showLeftRight)
-                            ControllerButtonHints.ShowTextHint(rightHand, action, "Up: Flatten Screen\nDown: Curve Screen");
-                        break;
-
-                    // For LeftHand actions, we'll look for the single action and build the
-                    // large text help for all 4 dpad actions.
-                    case "HideFloorAction":
-                        ControllerButtonHints.ShowTextHint(leftHand, action, "Cycle environment");
-                        break;
-                    case "ScreenBiggerAction":
-                        ControllerButtonHints.ShowTextHint(leftHand, action, "Up: Screen Up\nDown: Screen Down\nLeft: Screen Smaller\nRight: Screen Bigger");
-                        break;
-
-                    // If we are demo/slideshow mode, we want to add the help for pause/skip.
-                    case "PauseAction":
-                        if (Game.slideshowMode)
-                            ControllerButtonHints.ShowTextHint(rightHand, action, "Pause Slideshow");
-                        break;
-                    case "SkipAction":
-                        if (Game.slideshowMode)
-                            ControllerButtonHints.ShowTextHint(leftHand, action, "Next Slide");
-                        break;
-
-                    default:
-                        break;
-                }
-            }
-        }
-
-
-        //-------------------------------------------------
-        public void DisableHints()
-        {
-            if (buttonHintCoroutine != null)
-            {
-                StopCoroutine(buttonHintCoroutine);
-                buttonHintCoroutine = null;
-            }
-
-            if (textHintCoroutine != null)
-            {
-                StopCoroutine(textHintCoroutine);
-                textHintCoroutine = null;
-            }
-
-            foreach (Hand hand in Player.instance.hands)
-            {
-                ControllerButtonHints.HideAllButtonHints(hand);
-                ControllerButtonHints.HideAllTextHints(hand);
-
-                // Always leave ToggleHintAction button lit up, as an easy way to see how to show hints again.
-                foreach (SteamVR_Action_Boolean action in SteamVR_Input.actionsBoolean)
-                {
-                    if (action.GetShortName() == "ToggleHintAction")
-                    {
-                        ControllerButtonHints.ShowButtonHint(hand, action);
-                        break;
-                    }
-                }
-            }
-        }
-
-
-        //-------------------------------------------------
-        // Cycles through all the button hints on the controller
-        //-------------------------------------------------
-        private IEnumerator TestButtonHints(Hand hand)
-        {
-            ControllerButtonHints.HideAllButtonHints(hand);
-
-            while (true)
-            {
-                for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsIn.Length; actionIndex++)
-                {
-                    ISteamVR_Action_In action = SteamVR_Input.actionsIn[actionIndex];
-                    if (action.GetActive(hand.handType))
-                    {
-                        ControllerButtonHints.ShowButtonHint(hand, action);
-                        yield return new WaitForSeconds(1.0f);
-                        ControllerButtonHints.HideButtonHint(hand, action);
-                        yield return new WaitForSeconds(0.5f);
-                    }
-                    yield return null;
-                }
-
-                ControllerButtonHints.HideAllButtonHints(hand);
-                yield return new WaitForSeconds(1.0f);
-            }
-        }
-
-
-        //-------------------------------------------------
-        // Cycles through all the text hints on the controller
-        //-------------------------------------------------
-        private IEnumerator TestTextHints(Hand hand)
-        {
-            ControllerButtonHints.HideAllTextHints(hand);
-
-            while (true)
-            {
-                for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsIn.Length; actionIndex++)
-                {
-                    ISteamVR_Action_In action = SteamVR_Input.actionsIn[actionIndex];
-                    if (action.GetActive(hand.handType))
-                    {
-                        ControllerButtonHints.ShowTextHint(hand, action, action.GetShortName());
-                        yield return new WaitForSeconds(3.0f);
-                        ControllerButtonHints.HideTextHint(hand, action);
-                        yield return new WaitForSeconds(0.5f);
-                    }
-                    yield return null;
-                }
-
-                ControllerButtonHints.HideAllTextHints(hand);
-                yield return new WaitForSeconds(3.0f);
-            }
-        }
+        return label;
     }
 }

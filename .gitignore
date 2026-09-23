@@ -7,6 +7,9 @@
 **/[Oo]bj/*
 **/[Bb]uild/*
 **/[Bb]uilds/*
+**/[Ll]ogs/*
+**/[Uu]ser[Ss]ettings/*
+**/[Mm]emory[Cc]aptures/*
 **/UnityGenerated/*
 **/Assets/AssetStoreTools*
 **/Assets/Plugins/*
@@ -55,6 +58,10 @@ ios.app
 # Builds
 *.apk
 *.unitypackage
+
+# Unity generated IDE projects
+UnityScreenApp/*.csproj
+UnityScreenApp/*.sln
 
 # New for VS2017
 /.vs/*

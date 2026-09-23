@@ -60,7 +60,9 @@
             
 	static const float4 ONES = (float4)1.0;// float4(1.0, 1.0, 1.0, 1.0);
 	static const float4 ZEROES = (float4)0.0;
-	sampler2D _MainTex;
+	// Screen space texture declaration so this works as an XR image effect with
+	// Single Pass Instanced, where the source is a Texture2DArray with one slice per eye.
+	UNITY_DECLARE_SCREENSPACE_TEXTURE(_MainTex);
 	half4 _MainTex_ST;
 	half4 _MainTex_TexelSize;
 
@@ -86,6 +88,7 @@
 		float4 vertex : POSITION;
 		float2 texcoord : TEXCOORD0;
 		float2 texcoord1 : TEXCOORD1;
+		UNITY_VERTEX_INPUT_INSTANCE_ID
 	};
 
 	struct v2f {
@@ -95,17 +98,21 @@
         #if UNITY_UV_STARTS_AT_TOP
 			float2 uv2 : TEXCOORD1;
 		#endif
+		UNITY_VERTEX_OUTPUT_STEREO
 	};
 	
 	float3 Sample(float2 uv, float2 offsets, float weight)//float mipbias - done with weight
 	{
 	    float2 PixelSize = _MainTex_TexelSize.xy;
-	    return tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + offsets * PixelSize, _MainTex_ST)).rgb * weight;
+	    return UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + offsets * PixelSize, _MainTex_ST)).rgb * weight;
 	}    	
 
 	v2f vertPRISM (appdata_t v)
 	{
 		v2f o;
+		UNITY_SETUP_INSTANCE_ID(v);
+		UNITY_INITIALIZE_OUTPUT(v2f, o);
+		UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 		o.vertex = UnityObjectToClipPos(v.vertex);
 		o.uv = v.texcoord;
 		
@@ -137,7 +144,7 @@
 	*/
 	half4 sharpen(float2 uv)
 	{
-		float4 colorInput = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
+		float4 colorInput = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
 		half2 PixelSize = _MainTex_TexelSize.xy;
 	  	
 		float3 ori = colorInput.rgb;
@@ -152,10 +159,10 @@
         float px = PixelSize.x;//1.0/
 		float py = PixelSize.y;
 
-		float3 blur_ori = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(px, -py) * 0.5 * offset_bias, _MainTex_ST)).rgb; // South East
-		blur_ori += tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(-px, -py) * 0.5 * offset_bias, _MainTex_ST)).rgb;  // South West
-		blur_ori += tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(px, py) * 0.5 * offset_bias, _MainTex_ST)).rgb; // North East
-		blur_ori += tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(-px, py) * 0.5 * offset_bias, _MainTex_ST)).rgb; // North West
+		float3 blur_ori = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(px, -py) * 0.5 * offset_bias, _MainTex_ST)).rgb; // South East
+		blur_ori += UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(-px, -py) * 0.5 * offset_bias, _MainTex_ST)).rgb;  // South West
+		blur_ori += UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(px, py) * 0.5 * offset_bias, _MainTex_ST)).rgb; // North East
+		blur_ori += UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + float2(-px, py) * 0.5 * offset_bias, _MainTex_ST)).rgb; // North West
 
 		blur_ori *= 0.25;  // ( /= 4) Divide by the number of texture fetches
 
@@ -176,6 +183,7 @@
 	
 	half4 fragSharpen (v2f i) : SV_Target
 	{
+		UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 		#if UNITY_UV_STARTS_AT_TOP
 		float2 uv = i.uv2;
 		#else
@@ -188,6 +196,7 @@
 	//Let's try reverse median.
 	float4 fragSharpenMedian (v2f i) : SV_Target
 	{
+		UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 		float2 ooRes = _MainTex_TexelSize.xy;//_ScreenParams.w;
 
 		float2 uv = i.uv;
@@ -198,13 +207,13 @@
 		//
 		float3 v[5];
 		
-		float4 midCol = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
+		float4 midCol = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
 		
         v[0] = midCol;
-        v[1] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.xz, _MainTex_ST)).rgb;
-        v[2] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.xz, _MainTex_ST)).rgb;
-        v[3] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.zy, _MainTex_ST)).rgb;
-        v[4] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.zy, _MainTex_ST)).rgb;
+        v[1] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.xz, _MainTex_ST)).rgb;
+        v[2] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.xz, _MainTex_ST)).rgb;
+        v[3] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.zy, _MainTex_ST)).rgb;
+        v[4] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.zy, _MainTex_ST)).rgb;
 		
 		float3 temp;
 		mnmx5(v[0], v[1], v[2], v[3], v[4]);
@@ -217,7 +226,7 @@
 
 		#else
 		
-		float4 midCol = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
+		float4 midCol = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
 		
 		// -1  1  1
 		// -1  0  1 
@@ -232,7 +241,7 @@
 			for(int dY = -1; dY <= 1; ++dY) 
 			{
 				float2 ofst = float2(float(dX), float(dY));
-				v[(dX + 1) * 3 + (dY + 1)] = (float3)tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofst * ooRes, _MainTex_ST)).rgb;
+				v[(dX + 1) * 3 + (dY + 1)] = (float3)UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofst * ooRes, _MainTex_ST)).rgb;
 			}
 		}
 
@@ -254,6 +263,7 @@
 
 	float4 fragSharpenMedianFast (v2f i) : SV_Target
 	{
+		UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 		float2 ooRes = _MainTex_TexelSize.xy;//_ScreenParams.w;
 
 		float2 uv = i.uv;
@@ -262,13 +272,13 @@
 		//
 		float3 v[5];
 		
-		float4 midCol = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
+		float4 midCol = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv, _MainTex_ST));
 		
         v[0] = midCol;
-        v[1] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.xz, _MainTex_ST)).rgb;
-        v[2] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.xz, _MainTex_ST)).rgb;
-        v[3] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.zy, _MainTex_ST)).rgb;
-        v[4] = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.zy, _MainTex_ST)).rgb;
+        v[1] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.xz, _MainTex_ST)).rgb;
+        v[2] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.xz, _MainTex_ST)).rgb;
+        v[3] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv - ofs.zy, _MainTex_ST)).rgb;
+        v[4] = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_MainTex, UnityStereoScreenSpaceUVAdjust(uv + ofs.zy, _MainTex_ST)).rgb;
 		
 		float3 temp;
 		mnmx5(v[0], v[1], v[2], v[3], v[4]);

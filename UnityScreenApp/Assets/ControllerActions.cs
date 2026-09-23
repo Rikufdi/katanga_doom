@@ -3,8 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
-using Valve.VR;
-using Valve.VR.InteractionSystem;
 
 // This class is for changing the screen distance, or screen size, or vertical location
 //
@@ -14,20 +12,8 @@ using Valve.VR.InteractionSystem;
 
 public class ControllerActions : MonoBehaviour
 {
-
-    public SteamVR_Action_Boolean fartherAction;
-    public SteamVR_Action_Boolean nearerAction;
-    public SteamVR_Action_Boolean biggerAction;
-    public SteamVR_Action_Boolean smallerAction;
-    public SteamVR_Action_Boolean higherAction;
-    public SteamVR_Action_Boolean lowerAction;
-    public SteamVR_Action_Boolean curveAction;
-    public SteamVR_Action_Boolean flattenAction;
-
-    public SteamVR_Action_Boolean hideFloorAction;
-    public SteamVR_Action_Boolean recenterAction;
-    public SteamVR_Action_Boolean toggleSharpening;
-    public SteamVR_Action_Boolean resetAll;
+    // VR controller input comes from KatangaInput (OpenXR via the Input System).
+    // See KatangaInput.cs for the bindings.
 
     // Hint panel to left of user view.
     public GameObject billboard;
@@ -74,9 +60,10 @@ public class ControllerActions : MonoBehaviour
     {                                                   // bad original saved values in the field.
         return PlayerPrefs.GetFloat("curve", 4.0f);     // Default of 40% is arbitrary, looks good, and immediately visible.
     }
-    private static int GetSharpening()                  // On by default
+    // 0 = off, 1 = PRISM sharpen of the VR view (default), 2 = FSR upscale of the game image.
+    private static int GetSharpening()
     {
-        return PlayerPrefs.GetInt("sharpening", 1);
+        return PlayerPrefs.GetInt("sharpening", GameUpscaler.forceEnabled ? 2 : 1);
     }
     private static float GetSharpness()
     {
@@ -143,61 +130,63 @@ public class ControllerActions : MonoBehaviour
 
     //-------------------------------------------------
 
-    // These ChangeListeners are all added during Enable and removed on Disable, rather
-    // than at Start, because they will error out if the controller is not turned on.
-    // These are called when the controllers are powered up, and then off, which makes
-    // it a reliable place to activate.
+    // VR controllers are polled each frame through KatangaInput.  The sticks/trackpads act
+    // as a 4-way dpad, and each axis runs one repeating coroutine while it is held, the
+    // same as the old SteamVR change listeners did.
 
     private void OnEnable()
     {
-        fartherAction.AddOnChangeListener(OnZoomAction, SteamVR_Input_Sources.RightHand);
-        nearerAction.AddOnChangeListener(OnZoomAction, SteamVR_Input_Sources.RightHand);
-
-        biggerAction.AddOnChangeListener(OnBiggerAction, SteamVR_Input_Sources.LeftHand);
-        smallerAction.AddOnChangeListener(OnSmallerAction, SteamVR_Input_Sources.LeftHand);
-        higherAction.AddOnChangeListener(OnHigherAction, SteamVR_Input_Sources.LeftHand);
-        lowerAction.AddOnChangeListener(OnLowerAction, SteamVR_Input_Sources.LeftHand);
-
-        curveAction.AddOnChangeListener(OnCurveAction, SteamVR_Input_Sources.RightHand);
-        flattenAction.AddOnChangeListener(OnCurveAction, SteamVR_Input_Sources.RightHand);
-
-        recenterAction.AddOnChangeListener(OnRecenterAction, SteamVR_Input_Sources.RightHand);
-        hideFloorAction.AddOnStateDownListener(OnHideFloorAction, SteamVR_Input_Sources.LeftHand);
-        toggleSharpening.AddOnStateDownListener(OnToggleSharpeningAction, SteamVR_Input_Sources.LeftHand);
-
-        resetAll.AddOnStateDownListener(OnResetAllAction, SteamVR_Input_Sources.Any);
+        KatangaInput.Enable();
     }
 
-    private void OnDisable()
+    private int vrZoomDir, vrSizeDir, vrCurveDir, vrSlideDir;
+
+    private void PollVRControllers()
     {
-        if (fartherAction != null)
-            fartherAction.RemoveOnChangeListener(OnZoomAction, SteamVR_Input_Sources.RightHand);
-        if (nearerAction != null)
-            nearerAction.RemoveOnChangeListener(OnZoomAction, SteamVR_Input_Sources.RightHand);
+        KatangaInput.Direction right = KatangaInput.RightDirection();
+        KatangaInput.Direction left = KatangaInput.LeftDirection();
 
-        if (biggerAction != null)
-            biggerAction.RemoveOnChangeListener(OnBiggerAction, SteamVR_Input_Sources.LeftHand);
-        if (smallerAction != null)
-            smallerAction.RemoveOnChangeListener(OnSmallerAction, SteamVR_Input_Sources.LeftHand);
-        if (higherAction != null)
-            higherAction.RemoveOnChangeListener(OnHigherAction, SteamVR_Input_Sources.LeftHand);
-        if (lowerAction != null)
-            lowerAction.RemoveOnChangeListener(OnLowerAction, SteamVR_Input_Sources.LeftHand);
+        vrZoomDir = UpdateHeld(ref vrMoving, vrZoomDir, Axis(right, KatangaInput.Direction.North, KatangaInput.Direction.South),
+            d => MovingScreen(d * distance));
+        vrCurveDir = UpdateHeld(ref vrCurving, vrCurveDir, Axis(right, KatangaInput.Direction.East, KatangaInput.Direction.West),
+            d => CurvingScreen(d * curveDelta));
+        vrSlideDir = UpdateHeld(ref vrSliding, vrSlideDir, Axis(left, KatangaInput.Direction.North, KatangaInput.Direction.South),
+            d => SlidingScreen(d * distance));
+        vrSizeDir = UpdateHeld(ref vrSizing, vrSizeDir, Axis(left, KatangaInput.Direction.East, KatangaInput.Direction.West),
+            d => SizingScreen(d * distance));
 
-        if (curveAction != null)
-            curveAction.RemoveOnChangeListener(OnCurveAction, SteamVR_Input_Sources.RightHand);
-        if (flattenAction != null)
-            flattenAction.RemoveOnChangeListener(OnCurveAction, SteamVR_Input_Sources.RightHand);
+        if (KatangaInput.Recenter.WasPressedThisFrame())
+            RecenterHMD(true);
+        if (KatangaInput.CycleEnvironment.WasPressedThisFrame())
+            OnHideFloorAction();
+        if (KatangaInput.ToggleSharpening.WasPressedThisFrame())
+            OnToggleSharpeningAction();
+    }
 
-        if (recenterAction != null)
-            recenterAction.RemoveOnChangeListener(OnRecenterAction, SteamVR_Input_Sources.RightHand);
-        if (hideFloorAction != null)
-            hideFloorAction.RemoveOnStateDownListener(OnHideFloorAction, SteamVR_Input_Sources.LeftHand);
-        if (toggleSharpening != null)
-            toggleSharpening.RemoveOnStateDownListener(OnToggleSharpeningAction, SteamVR_Input_Sources.LeftHand);
+    private static int Axis(KatangaInput.Direction dir, KatangaInput.Direction positive, KatangaInput.Direction negative)
+    {
+        if (dir == positive)
+            return 1;
+        if (dir == negative)
+            return -1;
+        return 0;
+    }
 
-        if (resetAll != null)
-            resetAll.RemoveOnStateDownListener(OnResetAllAction, SteamVR_Input_Sources.Any);
+    // Start, stop, or reverse the coroutine for one axis when the held direction changes.
+    private int UpdateHeld(ref Coroutine running, int current, int wanted, Func<int, IEnumerator> routine)
+    {
+        if (wanted == current)
+            return current;
+
+        if (running != null)
+        {
+            StopCoroutine(running);
+            running = null;
+        }
+        if (wanted != 0)
+            running = StartCoroutine(routine(wanted));
+
+        return wanted;
     }
 
     //-------------------------------------------------
@@ -207,6 +196,8 @@ public class ControllerActions : MonoBehaviour
 
     void Update()
     {
+        PollVRControllers();
+
         ScreenZoom();
         ScreenBiggerSmaller();
         ScreenHigherLower();
@@ -226,7 +217,7 @@ public class ControllerActions : MonoBehaviour
     // screen either in or out. Each tick of the Coroutine is worth 10cm in 3D space.
     // 
     // Dpad up or joystick up on VR controllers moves it away, down moves it closer.  This
-    // uses the SteamVR InputActions, and is bound through the Unity SteamVR Input menu.
+    // uses the OpenXR controller bindings in KatangaInput.
     //
     // Keyboard pageup/dn and Xbox controller right stick also work using Unity InputManager.
     // These can only be used when Katanga is frontmost, so they won't interfere with the game.
@@ -250,19 +241,6 @@ public class ControllerActions : MonoBehaviour
     }
 
     Coroutine vrMoving = null;
-
-    private void OnZoomAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        float delta = (fromAction == fartherAction) ? distance : -distance;
-
-        if (active)
-            vrMoving = StartCoroutine(MovingScreen(delta));
-        else
-        {
-            StopCoroutine(vrMoving);
-            vrMoving = null;
-        }
-    }
 
     IEnumerator MovingScreen(float delta)
     {
@@ -317,24 +295,6 @@ public class ControllerActions : MonoBehaviour
 
     Coroutine vrSizing;
 
-    // For D-pad right click, grow the Screen rectangle.
-    private void OnBiggerAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        if (active)
-            vrSizing = StartCoroutine(SizingScreen(distance));
-        else
-            StopCoroutine(vrSizing);
-    }
-
-    // For D-pad left click, shrink the Screen rectangle.
-    private void OnSmallerAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        if (active)
-            vrSizing = StartCoroutine(SizingScreen(-distance));
-        else
-            StopCoroutine(vrSizing);
-    }
-
     // Whenever we are saving the x/y for the screen size, we want this to be at the 16:9 aspect
     // ratio, because at launch we want to show that normal shaped screen.  
     //
@@ -388,7 +348,7 @@ public class ControllerActions : MonoBehaviour
     // screen either in or out. Each tick of the Coroutine is worth 10cm in 3D space.
     // 
     // Joystick left or dpad up on VR controllers increases curve, right flattens.  This
-    // uses the SteamVR InputActions, and is bound through the Unity SteamVR Input menu.
+    // uses the OpenXR controller bindings in KatangaInput.
     //
     // Keyboard home/end and Xbox controller dpad U/D also work using Unity InputManager.
     // These can only be used when Katanga is frontmost, so they won't interfere with the game.
@@ -416,19 +376,6 @@ public class ControllerActions : MonoBehaviour
     }
 
     Coroutine vrCurving = null;
-
-    private void OnCurveAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        float delta = (fromAction == curveAction) ? curveDelta : -curveDelta;
-
-        if (active)
-            vrCurving = StartCoroutine(CurvingScreen(delta));
-        else
-        {
-            StopCoroutine(vrCurving);
-            vrCurving = null;
-        }
-    }
 
     private static double CalculateRadius(float curve)
     {
@@ -559,24 +506,6 @@ public class ControllerActions : MonoBehaviour
 
     Coroutine vrSliding;
 
-    // For an up click on the left trackpad, we want to move the screen up.
-    private void OnHigherAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        if (active)
-            vrSliding = StartCoroutine(SlidingScreen(distance));
-        else
-            StopCoroutine(vrSliding);
-    }
-
-    // For a down click on the left trackpad, we want to move the screen down.
-    private void OnLowerAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        if (active)
-            vrSliding = StartCoroutine(SlidingScreen(-distance));
-        else
-            StopCoroutine(vrSliding);
-    }
-
     IEnumerator SlidingScreen(float delta)
     {
         while (true)
@@ -664,15 +593,6 @@ public class ControllerActions : MonoBehaviour
     }
 
 
-    // We'll also handle the Right Controller Grip action as a RecenterHMD command.
-    // And whenever the user is going out of there way to specify this, save that angle.
-
-    private void OnRecenterAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        if (active)
-            RecenterHMD(true);
-    }
-
     // For Keyboard, recenter key is Home.
     // For xbox controller, recenter is right bumper.
 
@@ -691,7 +611,7 @@ public class ControllerActions : MonoBehaviour
     public GameObject leftEmitter;
     public GameObject rightEmitter;
 
-    private void OnHideFloorAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource)
+    private void OnHideFloorAction()
     {
         int state = GetFloor();
         state++;
@@ -783,11 +703,11 @@ public class ControllerActions : MonoBehaviour
     // Sharpening effect will be on by default, but the user has the option to disable it,
     // because it will cost some performance, and they may not care for it.
 
-    private void OnToggleSharpeningAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource)
+    private void OnToggleSharpeningAction()
     {
         int state = GetSharpening();
         state++;
-        if (state > 1)
+        if (state > 2)
             state = 0;
         PlayerPrefs.SetInt("sharpening", state);
 
@@ -803,7 +723,7 @@ public class ControllerActions : MonoBehaviour
         {
             int state = GetSharpening();
             state++;
-            if (state > 1)
+            if (state > 2)
                 state = 0;
             PlayerPrefs.SetInt("sharpening", state);
 
@@ -816,10 +736,8 @@ public class ControllerActions : MonoBehaviour
         PrismSharpen sharpener = vrCamera.GetComponent<PrismSharpen>();
 
         int state = GetSharpening();
-        if (state == 1)
-            sharpener.enabled = true;
-        else
-            sharpener.enabled = false;
+        sharpener.enabled = (state == 1);
+        GameUpscaler.enabled = (state == 2);
 
         float sharpness = GetSharpness();
         if (sharpness != 0.0f)
@@ -875,15 +793,6 @@ public class ControllerActions : MonoBehaviour
 
     // Sometimes the screen can fly wildly off screen, and we need a way to clear all the saved
     // PlayerPrefs Defaults.  Has been requested on forum.
-
-    private void OnResetAllAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource)
-    {
-        PlayerPrefs.DeleteAll();
-        print("*** Deleted all prefs, back to defaults.");
-
-        // Reset the environment like at launch.
-        Start();
-    }
 
     private void CheckResetAll()
     {

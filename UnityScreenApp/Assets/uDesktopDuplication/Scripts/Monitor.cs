@@ -130,6 +130,11 @@ public class Monitor
         }
     }
 
+    public bool isHDR
+    {
+        get { return Lib.IsHDR(id); }
+    }
+
     public float widthMeter
     { 
         get { return width / dpiX * 0.0254f; }
@@ -172,7 +177,7 @@ public class Monitor
 
     public bool isCursorVisible
     { 
-        get { return Lib.IsCursorVisible(id); }
+        get { return Lib.IsCursorVisible(); }
     }
 
     public int cursorX
@@ -301,7 +306,7 @@ public class Monitor
 
     public void GetCursorTexture(System.IntPtr ptr)
     {
-        Lib.GetCursorTexture(id, ptr);
+        Lib.GetCursorTexture(ptr);
     }
 
     public void CreateTextureIfNeeded()

@@ -4,6 +4,7 @@
 Properties
 {
     _Color ("Color", Color) = (1, 1, 1, 1)
+    _ColorScale ("ColorScale", Range(0.0, 10.0)) = 1.0
     _MainTex ("Texture", 2D) = "white" {}
     [KeywordEnum(Y, Z)] _Forward("Mesh Forward Direction", Int) = 0
     [Toggle(BEND_ON)] _Bend("Use Bend", Int) = 0
@@ -30,9 +31,6 @@ CGINCLUDE
 #include "./uDD_Common.cginc"
 #include "Tessellation.cginc"
 
-half _Radius;
-half _Width;
-half _Thickness;
 Texture2D _DispTex;
 SamplerState sampler_DispTex;
 half _DispFactor;
@@ -150,7 +148,7 @@ DsOutput domain(
 
 fixed4 frag(DsOutput i) : SV_Target
 {
-    return uddGetScreenTexture(i.f2TexCoord);
+    return uddGetScreenTexture(i.f2TexCoord) * _Color * _ColorScale;
 }
 
 ENDCG
@@ -162,13 +160,13 @@ Pass
     #pragma fragment frag
     #pragma hull hull
     #pragma domain domain
-    #pragma multi_compile ___ INVERT_X
-    #pragma multi_compile ___ INVERT_Y
+    #pragma shader_feature ___ INVERT_X
+    #pragma shader_feature ___ INVERT_Y
+    #pragma shader_feature _FORWARD_Y _FORWARD_Z
+    #pragma shader_feature ___ USE_GAMMA_TO_LINEAR_SPACE
     #pragma multi_compile ___ ROTATE90 ROTATE180 ROTATE270
     #pragma multi_compile ___ USE_CLIP
     #pragma multi_compile ___ BEND_ON
-    #pragma multi_compile _FORWARD_Y _FORWARD_Z
-    #pragma multi_compile ___ USE_GAMMA_TO_LINEAR_SPACE
     ENDCG
 }
 

@@ -121,6 +121,8 @@ public class Game : MonoBehaviour
     // Full path to Steam.exe     --steam-path:
     // Game SteamAppID            --steam-appid:
     // Epic Game Store AppID      --epic-appid:
+    // FSR upscale factor         --upscale:            (e.g. 1.5, turns on FSR)
+    // FSR RCAS sharpness         --upscale-sharpness:  (stops, 0 = sharpest)
     //
     // Show desktop in 2D         --show-desktop
     //
@@ -176,6 +178,20 @@ public class Game : MonoBehaviour
                 i++;
                 steamAppID = args[i];
                 print("--steam-appid: " + steamAppID);
+            }
+            else if (args[i] == "--upscale")
+            {
+                i++;
+                GameUpscaler.Factor = Single.Parse(args[i], System.Globalization.CultureInfo.InvariantCulture);
+                GameUpscaler.forceEnabled = true;
+                PlayerPrefs.SetInt("sharpening", 2);    // FSR state in ControllerActions
+                print("--upscale: " + GameUpscaler.Factor);
+            }
+            else if (args[i] == "--upscale-sharpness")
+            {
+                i++;
+                GameUpscaler.Sharpness = Single.Parse(args[i], System.Globalization.CultureInfo.InvariantCulture);
+                print("--upscale-sharpness: " + GameUpscaler.Sharpness);
             }
             else if (args[i] == "--epic-appid")
             {
@@ -480,9 +496,9 @@ public class Game : MonoBehaviour
 
         print("Load GamePlugin");
         if (gameProc.PlatformBits == 64)
-            _nativeDLLName = Application.dataPath + "/Plugins/GamePlugin64.dll";
+            _nativeDLLName = PluginsDirectory() + "/GamePlugin64.dll";
         else
-            _nativeDLLName = Application.dataPath + "/Plugins/GamePlugin.dll";
+            _nativeDLLName = PluginsDirectory() + "/GamePlugin.dll";
 
         int loadResult = _spyMgr.LoadCustomDll(gameProc, _nativeDLLName, true, true);
         if (loadResult <= 0)
@@ -493,6 +509,17 @@ public class Game : MonoBehaviour
         }
 
         print(String.Format("Successfully loaded {0}", _nativeDLLName));
+    }
+
+
+    // Since Unity 2019.3, standalone players put native plugins in an architecture
+    // subfolder, katanga_Data/Plugins/x86_64.  The Editor and older builds use Plugins.
+
+    public static string PluginsDirectory()
+    {
+        string plugins = Application.dataPath + "/Plugins";
+        string x64 = plugins + "/x86_64";
+        return Directory.Exists(x64) ? x64 : plugins;
     }
 
 

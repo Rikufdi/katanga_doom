@@ -25,6 +25,10 @@ public class LaunchAndPlay : MonoBehaviour
     // It automatically updates as the injected DLL copies the bits into the
     // shared resource.
     Texture2D _bothEyes = null;
+    bool gameTextureLive = false;
+
+    // Optional FSR 1.0 upscale/sharpen of the game image, see GameUpscaler.cs.
+    GameUpscaler upscaler;
     public static System.Int32 gGameSharedHandle = 0;
     bool ownMutex = false;
 
@@ -88,6 +92,8 @@ public class LaunchAndPlay : MonoBehaviour
         // Store the current Texture2D on the Quad as the original grey. We use this
         // as the default when images stop arriving, or we lose the original.
         greyTexture = screenRenderer.material.mainTexture;
+
+        upscaler = new GameUpscaler();
 
         // Default assumption is normal VR game connection.
         game = GetComponent<Game>();
@@ -176,6 +182,7 @@ public class LaunchAndPlay : MonoBehaviour
         if (pollHandle == 0)
         {
             screenRenderer.material.mainTexture = greyTexture;
+            gameTextureLive = false;
             return;
         }
 
@@ -257,6 +264,7 @@ public class LaunchAndPlay : MonoBehaviour
             // showing the correct half for each eye.
 
             screenRenderer.material.mainTexture = _bothEyes;
+            gameTextureLive = true;
 
 
             // These are test Quads, and will be removed.  One for each eye. Might be deactivated.
@@ -313,6 +321,16 @@ public class LaunchAndPlay : MonoBehaviour
 
         if (ownMutex)
             PollForSharedSurface();
+
+        // Upscaling reads the shared surface, so only while we hold the mutex, and it
+        // needs to be redone every frame since the game keeps updating that surface.
+        if (ownMutex && gameTextureLive && _bothEyes != null)
+        {
+            if (GameUpscaler.enabled)
+                screenRenderer.material.mainTexture = upscaler.Process(_bothEyes);
+            else
+                screenRenderer.material.mainTexture = _bothEyes;
+        }
 
         // Doing GC on an ongoing basis is recommended for VR, to avoid weird stalls
         // at random times.
@@ -379,6 +397,9 @@ public class LaunchAndPlay : MonoBehaviour
     private void OnApplicationQuit()
     {
         print("OnApplicationQuit");
+
+        if (upscaler != null)
+            upscaler.Release();
 
         CloseFileMappedIPC();
 

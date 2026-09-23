@@ -4,7 +4,6 @@ using System.IO;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.UI;
-using Valve.VR;
 
 // This is a subclass of the Game object.  Game object is setup to inject into and run
 // a given game specified by the input arguments.  
@@ -15,9 +14,6 @@ using Valve.VR;
 
 public class SlideShow : Game
 {
-    public SteamVR_Action_Boolean pauseAction;
-    public SteamVR_Action_Boolean skipAction;
-
     public Renderer screen;
     public Text infoText;
 
@@ -31,22 +27,16 @@ public class SlideShow : Game
     // We want to be able to control the slideshow as well, pausing on great shots, and
     // skipping quickly if not interesting.  
 
+    // Right grip pauses while held, left grip skips.  See KatangaInput for bindings.
+
     private void OnEnable()
     {
-        pauseAction.AddOnChangeListener(OnPauseAction, SteamVR_Input_Sources.RightHand);
-        skipAction.AddOnChangeListener(OnSkipAction, SteamVR_Input_Sources.LeftHand);
-    }
-
-    private void OnDisable()
-    {
-        if (pauseAction != null)
-            pauseAction.RemoveOnChangeListener(OnPauseAction, SteamVR_Input_Sources.RightHand);
-        if (skipAction != null)
-            skipAction.RemoveOnChangeListener(OnSkipAction, SteamVR_Input_Sources.LeftHand);
+        KatangaInput.Enable();
     }
 
     private void Update()
     {
+        PollVRControllers();
         PauseToggle();
         NextSlide();
     }
@@ -119,14 +109,14 @@ public class SlideShow : Game
 
     // -- For VR controller actions
 
-    private void OnPauseAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
+    private void PollVRControllers()
     {
-        playing = !active;
-    }
+        if (KatangaInput.Pause.WasPressedThisFrame())
+            playing = false;
+        if (KatangaInput.Pause.WasReleasedThisFrame())
+            playing = true;
 
-    private void OnSkipAction(SteamVR_Action_Boolean fromAction, SteamVR_Input_Sources fromSource, bool active)
-    {
-        if (active)
+        if (KatangaInput.Skip.WasPressedThisFrame())
             skip = true;
     }
 

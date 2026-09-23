@@ -8,35 +8,21 @@ permissions:
   contents: read
   actions: read
 
+env:
+  UNITY_VERSION: 6000.3.19f1
+
 jobs:
   # Build for windows C++ Unity plugin
   build-plugin:
     #  includes VS2022 Enterprise
     runs-on: windows-2022
 
-#    permissions:
-#      contents: write
-#      actions: read
-      
     steps:
       - name: Checkout master
-        uses: actions/checkout@v4
-
-      - name: Show all Visual Studio installs and toolsets
-        shell: cmd
-        run: |
-          "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -all
-          echo(
-          echo === Installed VS ===
-          dir "C:\Program Files (x86)\Microsoft Visual Studio"
-          dir "C:\Program Files\Microsoft Visual Studio"
-          echo(
-          echo === Installed toolsets ===
-          dir "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC"
-          dir "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC"
+        uses: actions/checkout@v7
 
       - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       # Build both Win32/x64 targets as binary injected into games must match game bitness.
       - name: Build x32/x64
@@ -44,77 +30,86 @@ jobs:
         # Add additional options to the MSBuild command line here (like platform or verbosity level).
         # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
         run: |
-          msbuild /m /p:Configuration=VR katanga.sln /p:platform=x64 /v:minimal /target:rebuild /p:PlatformToolset=v142
-          msbuild /m /p:Configuration=VR katanga.sln /p:platform=Win32 /v:minimal /target:rebuild /p:PlatformToolset=v142
+          msbuild /m /p:Configuration=VR katanga.sln /p:platform=x64 /v:minimal /target:rebuild /p:PlatformToolset=v143
+          msbuild /m /p:Configuration=VR katanga.sln /p:platform=Win32 /v:minimal /target:rebuild /p:PlatformToolset=v143
 
       # Save off artifacts for use in Unity build step
       - name: Upload plugin Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          # Artifact name
-          name: katanga.dll
-#           GamePlugin64.dll
-#           UnityNativePlugin64.dll
-          # A file, directory or wildcard pattern that describes what to upload
+          name: katanga-plugins
+          # GamePlugin.dll, GamePlugin64.dll, UnityNativePlugin64.dll
           path: .\UnityScreenApp\Assets\Plugins\*.dll
 
   build-unity:
     needs: build-plugin
     runs-on: ubuntu-latest
+    # Needed to publish the GitHub Release.
+    permissions:
+      contents: write
+      actions: read
     steps:
-    
-#      - name: Install Unity 2018.4.36f1
-#        uses: game-ci/unity-install@v3
-#        with:
-#          version: 2018.4.36f1
-#          modules: windows-il2cpp
+      - name: Checkout master
+        uses: actions/checkout@v7
 
-# apparently upsupported on windows?
-      - name: Activate Unity license
-        uses: game-ci/unity-activate@v2
+      # The native plugins must be in the project before Unity builds, so they
+      # get packaged into katanga_Data/Plugins/x86_64.
+      - name: Download plugin DLLs
+        uses: actions/download-artifact@v8
         with:
-          unityVersion: 2018.4.36f1
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          name: katanga-plugins
+          path: UnityScreenApp/Assets/Plugins
 
       - name: Build Unity app for Windows
-        uses: game-ci/unity-builder@v4.5.0
+        uses: game-ci/unity-builder@v6
         env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
+          projectPath: UnityScreenApp
           targetPlatform: StandaloneWindows64
-          unityVersion: 2018.4.36f1
+          unityVersion: ${{ env.UNITY_VERSION }}
           buildName: katanga
           buildsPath: katanga_build
-          
-      - name: Download plugin DLL
-        uses: actions/download-artifact@v4
-        with:
-          name: katanga.dll
-          path: Assets/Plugins/x86_64
-          
+
+      # Same as ReleaseBuild.cs: Deviare needs its databases and the x86 halves
+      # next to the plugins so it can inject into both 32 and 64 bit games.
+      - name: Add Deviare support files and stereo pictures
+        shell: bash
+        run: |
+          out="katanga_build/StandaloneWindows64"
+          data="$out/katanga_Data"
+          plugins="$data/Plugins/x86_64"
+          [ -d "$plugins" ] || plugins="$data/Plugins"
+          sudo chown -R "$(id -u):$(id -g)" katanga_build
+          cp UnityScreenApp/Assets/Dependencies/deviare32.db UnityScreenApp/Assets/Dependencies/deviare64.db "$plugins/"
+          for dll in UnityScreenApp/Assets/Dependencies/DeviareCOM.dll UnityScreenApp/Assets/Dependencies/DvAgent.dll UnityScreenApp/Assets/Plugins/GamePlugin.dll; do
+            [ -f "$dll" ] && [ ! -f "$plugins/$(basename "$dll")" ] && cp "$dll" "$plugins/"
+          done
+          cp -r "UnityScreenApp/Stereo Pictures" "$out/"
+          rm -rf "$out/Stereo Pictures/BonusShots"
+
       - name: Get tag name
         shell: bash
         run: |
           TAG_NUM="${GITHUB_REF##*/}"
           echo "TAG_NUM=$TAG_NUM" >> $GITHUB_ENV
           echo "Using Tag: $TAG_NUM"
-  
+
       - name: Compress release to .7z
         shell: bash
         run: |
-          cd "katanga_build"
-          7z a -t7z "katanga_v${TAG_NUM}.7z" "./*"
-      
+          cd "katanga_build/StandaloneWindows64"
+          7z a -t7z "../katanga_v${TAG_NUM}.7z" "./*"
+
       - name: List contents of .7z file for log info
         shell: bash
         run: |
           7z l "katanga_build/katanga_v${TAG_NUM}.7z"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.TAG_NUM }}
           name: Release build for v${{ env.TAG_NUM }} (x32, x64)
