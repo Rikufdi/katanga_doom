@@ -25,6 +25,12 @@ Controller input goes through the Unity Input System with generic XR bindings, s
 `Assets/Editor/KatangaXRSetup.cs`, which configures XR Plug-in Management and OpenXR
 when the project is opened and before every build (menu: Build > Configure XR).
 
+Controller models come from the [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles)
+assets (MIT, `Assets/Resources/ControllerModels`), imported with glTFast.  The model is
+chosen from the OpenXR interaction profile the runtime reports for each hand (Index,
+Vive, Touch, Quest Touch Plus/Pro, WMR, Reverb G2, generic fallback), see
+`Assets/ControllerModel.cs`.
+
 Rendering is Built-in Render Pipeline, D3D11 only (the game's shared surface and
 `UnityNativePlugin` are D3D11), Single Pass Instanced stereo.
 

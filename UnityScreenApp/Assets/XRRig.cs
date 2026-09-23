@@ -9,7 +9,8 @@ using UnityEngine.XR.Management;
 //
 // This replaces the SteamVR Player prefab.  Rather than keeping a prefab in the scene
 // that has to be kept in sync with a VR SDK, we attach Input System TrackedPoseDrivers
-// at startup to the existing VRCamera/LeftHand/RightHand objects.  Works with any
+// at startup to the existing VRCamera/LeftHand/RightHand objects, plus a controller
+// model for each hand (ControllerModel.cs).  Works with any
 // OpenXR runtime: SteamVR, VDXR (Virtual Desktop), Meta, WMR.
 
 public static class XRRig
@@ -23,8 +24,15 @@ public static class XRRig
         else
             Debug.LogWarning("XRRig: no MainCamera found for head tracking.");
 
-        AddPoseDriver(GameObject.Find("LeftHand"), "<XRController>{LeftHand}/devicePosition", "<XRController>{LeftHand}/deviceRotation");
-        AddPoseDriver(GameObject.Find("RightHand"), "<XRController>{RightHand}/devicePosition", "<XRController>{RightHand}/deviceRotation");
+        GameObject leftHand = GameObject.Find("LeftHand");
+        GameObject rightHand = GameObject.Find("RightHand");
+        AddPoseDriver(leftHand, "<XRController>{LeftHand}/devicePosition", "<XRController>{LeftHand}/deviceRotation");
+        AddPoseDriver(rightHand, "<XRController>{RightHand}/devicePosition", "<XRController>{RightHand}/deviceRotation");
+
+        AddControllerModel(leftHand, true);
+        AddControllerModel(rightHand, false);
+        if (cam != null)
+            AddControllerLight(cam.transform);
 
         KatangaInput.Enable();
 
@@ -43,6 +51,30 @@ public static class XRRig
         driver.ignoreTrackingState = true;
         driver.positionInput = new InputActionProperty(new InputAction(target.name + "Position", InputActionType.Value, position, expectedControlType: "Vector3"));
         driver.rotationInput = new InputActionProperty(new InputAction(target.name + "Rotation", InputActionType.Value, rotation, expectedControlType: "Quaternion"));
+    }
+
+    static void AddControllerModel(GameObject hand, bool isLeft)
+    {
+        if (hand == null || hand.GetComponent<ControllerModel>() != null)
+            return;
+        hand.AddComponent<ControllerModel>().isLeft = isLeft;
+    }
+
+    // The scene has no lights, it is all skybox ambient and unlit screen.  The controller
+    // models are PBR, so give them a soft head mounted light that only affects the hand
+    // layer, leaving the floor and environment exactly as before.
+
+    static void AddControllerLight(Transform head)
+    {
+        GameObject lightObject = new GameObject("ControllerLight");
+        lightObject.transform.SetParent(head, false);
+        lightObject.transform.localRotation = Quaternion.Euler(30.0f, 0.0f, 0.0f);
+
+        Light light = lightObject.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.intensity = 1.0f;
+        light.shadows = LightShadows.None;
+        light.cullingMask = 1 << ControllerModel.HandLayer;
     }
 
     // The scene was built for SteamVR standing/room-scale, with the floor at y=0 and

@@ -5,9 +5,9 @@ using UnityEngine;
 // Floating help text next to each VR controller.
 //
 // The SteamVR Interaction System used to draw these hints on the controller render
-// models.  OpenXR has no render models, so we attach a small text label to each hand
-// instead, which works the same on every runtime.  Right A (or menu) toggles them,
-// and the choice is saved.
+// models.  Now a small text label floats just above each controller model (see
+// ControllerModel.cs), which works the same on every runtime.  Right A (or menu)
+// toggles them, and the choice is saved.
 
 public class ControllerHints : MonoBehaviour
 {
@@ -85,7 +85,7 @@ public class ControllerHints : MonoBehaviour
 
         GameObject label = new GameObject("Hint");
         label.transform.SetParent(hand, false);
-        label.transform.localPosition = new Vector3(0.0f, 0.06f, 0.02f);
+        label.transform.localPosition = new Vector3(0.0f, 0.09f, 0.02f);
         label.transform.localRotation = Quaternion.Euler(45.0f, 0.0f, 0.0f);
         label.transform.localScale = Vector3.one * 0.006f;
 
