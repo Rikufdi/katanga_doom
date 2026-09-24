@@ -73,3 +73,7 @@ UnityScreenApp/.vs/*
 
 # Unity batchmode build log
 unity_build.log
+
+# Auto-baked lighting for the main scene; not referenced by the scene.
+UnityScreenApp/Assets/BigScreen 3D/
+UnityScreenApp/Assets/BigScreen 3D.meta

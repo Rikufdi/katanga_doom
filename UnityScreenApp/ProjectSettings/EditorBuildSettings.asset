@@ -8,3 +8,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/BigScreen 3D.unity
     guid: 78bd026a2d31ff840b56fc944478230c
+  m_configObjects:
+    com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 59bbaa872428db841bb5ecb30d5f2a03,
+      type: 2}
+    com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 7124595003e3703459d7f0f310848968,
+      type: 2}
+  m_UseUCBPForAssetBundles: 0
