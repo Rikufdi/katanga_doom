@@ -31,6 +31,17 @@ public class ReleaseBuild : MonoBehaviour
             if (File.Exists(dll) && !File.Exists(target))
                 FileUtil.CopyFileOrDirectory(dll, target);
         }
+
+        // 3DFixManager registers DeviareCOM from the pre 2019.3 location,
+        // katanga_Data/Plugins, and Deviare loads its agents and databases from
+        // next to the registered DLL.  Keep a complete Deviare set there too.
+        string legacy = dataFolder + "/Plugins/";
+        if (legacy != plugins)
+        {
+            string[] deviare = { "DeviareCOM.dll", "DeviareCOM64.dll", "DvAgent.dll", "DvAgent64.dll", "deviare32.db", "deviare64.db" };
+            foreach (string file in deviare)
+                FileUtil.ReplaceFile(plugins + file, legacy + file);
+        }
     }
 
     [MenuItem("Build/Release Build _F5")]

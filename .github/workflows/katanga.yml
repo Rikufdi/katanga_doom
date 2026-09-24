@@ -87,6 +87,13 @@ jobs:
           for dll in UnityScreenApp/Assets/Dependencies/DeviareCOM.dll UnityScreenApp/Assets/Dependencies/DvAgent.dll UnityScreenApp/Assets/Plugins/GamePlugin.dll; do
             [ -f "$dll" ] && [ ! -f "$plugins/$(basename "$dll")" ] && cp "$dll" "$plugins/"
           done
+          # 3DFixManager registers DeviareCOM from katanga_Data/Plugins, and Deviare
+          # loads its agents and databases from next to it, so keep a full set there.
+          if [ "$plugins" != "$data/Plugins" ]; then
+            for f in DeviareCOM.dll DeviareCOM64.dll DvAgent.dll DvAgent64.dll deviare32.db deviare64.db; do
+              cp "$plugins/$f" "$data/Plugins/"
+            done
+          fi
           cp -r "UnityScreenApp/Stereo Pictures" "$out/"
           rm -rf "$out/Stereo Pictures/BonusShots"
 
