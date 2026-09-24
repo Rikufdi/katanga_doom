@@ -29,11 +29,21 @@ public class ControllerModel : MonoBehaviour
     string currentProfile;
     GameObject model;
 
+    XRController currentDevice;
+    string deviceProfile;
+
     private void Update()
     {
         XRController device = isLeft ? XRController.leftHand : XRController.rightHand;
 
-        string profile = device != null ? ProfileFor(device) : null;
+        // Only work the profile out again when the device changes.
+        if (device != currentDevice)
+        {
+            currentDevice = device;
+            deviceProfile = device != null ? ProfileFor(device) : null;
+        }
+
+        string profile = deviceProfile;
         if (profile != currentProfile)
         {
             currentProfile = profile;
@@ -53,17 +63,52 @@ public class ControllerModel : MonoBehaviour
     // Map the OpenXR interaction profile device layouts to WebXR input profile ids.
     static string ProfileFor(XRController device)
     {
+        // Manual choice, for runtimes that don't say which controller it is.
+        string forced = ForcedProfile;
+        if (!string.IsNullOrEmpty(forced) && forced != "auto")
+            return forced;
+
         switch (device.GetType().Name)
         {
             case "ValveIndexController": return "valve-index";
             case "ViveController": return "htc-vive";
-            case "OculusTouchController": return "oculus-touch-v3";
-            case "QuestTouchPlusController": return "meta-quest-touch-plus";
+            case "OculusTouchController": return TouchProfileForHeadset(KatangaSystemInfo.SystemName);
+            case "QuestTouchPlusController": return "meta-quest-touch-plus-v2";
             case "QuestProTouchController": return "meta-quest-touch-pro";
             case "WMRSpatialController": return "microsoft-mixed-reality";
             case "ReverbG2Controller": return "hp-mixed-reality";
             default: return fallbackProfile;
         }
+    }
+
+    // --controller-model on the command line, or the "controller-model" pref.  A WebXR
+    // profile id such as meta-quest-touch-plus-v2, or "auto".
+    public static string ForcedProfile
+    {
+        get { return PlayerPrefs.GetString("controller-model", "auto"); }
+        set { PlayerPrefs.SetString("controller-model", value); }
+    }
+
+    // SteamVR and VDXR report every Quest controller as the old Touch profile.  The
+    // headset name (see KatangaSystemInfo) tells them apart: VDXR and the Meta runtime
+    // give names like "Meta Quest 3" or "Meta Quest Pro".  SteamVR only gives
+    // "SteamVR/OpenXR : oculus", which falls through to the Quest 2 model, so use
+    // --controller-model there.
+    static string TouchProfileForHeadset(string systemName)
+    {
+        string name = (systemName ?? "").ToLowerInvariant();
+
+        if (name.Contains("quest pro"))
+            return "meta-quest-touch-pro";
+        if (name.Contains("quest 3"))                   // Quest 3 and 3S, Touch Plus
+            return "meta-quest-touch-plus-v2";
+        if (name.Contains("quest 2"))
+            return "oculus-touch-v3";
+        if (name.Contains("rift s") || name.Contains("quest"))  // Rift S and Quest 1
+            return "oculus-touch-v2";
+        if (name.Contains("rift"))                      // Rift CV1
+            return "oculus-touch";
+        return "oculus-touch-v3";
     }
 
     void LoadModel(string profile)

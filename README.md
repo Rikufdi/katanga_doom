@@ -29,17 +29,25 @@ Controller models come from the [WebXR Input Profiles](https://github.com/immers
 assets (MIT, `Assets/Resources/ControllerModels`), imported with glTFast.  The model is
 chosen from the OpenXR interaction profile the runtime reports for each hand (Index,
 Vive, Touch, Quest Touch Plus/Pro, WMR, Reverb G2, generic fallback), see
-`Assets/ControllerModel.cs`.
+`Assets/ControllerModel.cs`.  SteamVR and VDXR report every Quest controller as the old
+Touch profile, so for those the headset name decides (Quest 3/3S, Pro, 2, Rift S/Quest 1,
+Rift CV1).  VDXR and the Meta runtime report the headset name; SteamVR does not, so under
+SteamVR pass e.g. `--controller-model meta-quest-touch-plus-v2` (any folder name in
+`ControllerModels`, or `auto`).
 
 Rendering is Built-in Render Pipeline, D3D11 only (the game's shared surface and
-`UnityNativePlugin` are D3D11), Single Pass Instanced stereo.
+`UnityNativePlugin` are D3D11), Single Pass Instanced stereo, 4x MSAA.  The game image is
+split into one mipmapped, 16x anisotropic texture per eye before it is drawn
+(`ScreenImage.cs`), so it doesn't shimmer when the screen is smaller than the game's
+resolution.  `--render-scale 1.3` supersamples the whole VR view on top of the runtime's
+own setting.
 
 ### FSR upscaling of the game image
 
 Optional AMD FidelityFX Super Resolution 1.0 (EASU + RCAS) on the game image, so a
-game can run at lower resolution and be upscaled for the big screen.  Cycle
-Off / PRISM sharpen / FSR with Insert, the gamepad Y button, or left A/X on the
-controllers.  Command line: `--upscale 1.5` (also turns FSR on) and
+game can run at lower resolution and be upscaled for the big screen.  Insert, the
+gamepad Y button, or left A/X on the controllers cycle Off / Sharpen (RCAS on the game
+image, the default) / PRISM sharpen (whole VR view, costlier) / FSR upscale.  Command line: `--upscale 1.5` (also turns FSR on) and
 `--upscale-sharpness 0.2`.  See [Docs/Upscaling.md](Docs/Upscaling.md).
 
 ### Opening the project the first time

@@ -75,9 +75,18 @@ public static class KatangaXRSetup
         if (!general.Manager.activeLoaders.Any(l => l != null && l.GetType().FullName == OpenXRLoader))
             XRPackageMetadataStore.AssignLoader(general.Manager, OpenXRLoader, BuildTargetGroup.Standalone);
 
+        // Picks up feature classes added to the project since the settings were created,
+        // such as KatangaSystemInfo.
+        UnityEditor.XR.OpenXR.Features.FeatureHelpers.RefreshFeatures(BuildTargetGroup.Standalone);
+
         OpenXRSettings openxr = OpenXRSettings.GetSettingsForBuildTargetGroup(BuildTargetGroup.Standalone);
         if (openxr != null)
         {
+            // Headset name, for picking Quest 3/Pro controller models.
+            KatangaSystemInfo systemInfo = openxr.GetFeature<KatangaSystemInfo>();
+            if (systemInfo != null)
+                systemInfo.enabled = true;
+
             // Both eyes in one instanced draw.  Our shaders are written for it.
             openxr.renderMode = OpenXRSettings.RenderMode.SinglePassInstanced;
 

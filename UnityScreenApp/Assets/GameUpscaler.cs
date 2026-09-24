@@ -19,7 +19,8 @@ using UnityEngine;
 //                              e.g. 1.5.  Also turns the upscaler on.
 //   --upscale-sharpness <n>    Command line.  RCAS sharpness in stops, 0 = sharpest.
 //   PlayerPrefs "upscale-factor" and "upscale-sharpness" hold the same values.
-//   The sharpening toggle (Insert key, left A/X) cycles off / PRISM / FSR.
+//   The sharpening toggle (Insert key, left A/X) cycles off / RCAS sharpen /
+//   PRISM sharpen / FSR upscale.
 
 public class GameUpscaler
 {
@@ -28,6 +29,10 @@ public class GameUpscaler
 
     // Set by --upscale on the command line, to default the sharpening state to FSR.
     public static bool forceEnabled = false;
+
+    // RCAS sharpening only, no upscale.  The default sharpening mode: it runs once per
+    // frame at game resolution, far cheaper than a post effect over both eye buffers.
+    public static bool sharpenOnly = false;
 
     public static float Factor
     {
@@ -71,7 +76,7 @@ public class GameUpscaler
 
         int width = source.width;
         int height = source.height;
-        float factor = Factor;
+        float factor = sharpenOnly ? 1.0f : Factor;
 
         Texture rcasInput = source;
 

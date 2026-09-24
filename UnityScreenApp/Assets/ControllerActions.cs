@@ -60,10 +60,23 @@ public class ControllerActions : MonoBehaviour
     {                                                   // bad original saved values in the field.
         return PlayerPrefs.GetFloat("curve", 4.0f);     // Default of 40% is arbitrary, looks good, and immediately visible.
     }
-    // 0 = off, 1 = PRISM sharpen of the VR view (default), 2 = FSR upscale of the game image.
+    // Sharpening states, stored in the "sharpening" pref.  The numbers are kept stable
+    // so saved prefs keep their meaning:
+    //  0 = off
+    //  1 = PRISM sharpen of the whole VR view (post effect on every eye pixel)
+    //  2 = FSR upscale + RCAS sharpen of the game image
+    //  3 = RCAS sharpen of the game image only (default, cheapest)
+    private static readonly int[] sharpeningCycle = { 0, 3, 1, 2 };
+
     private static int GetSharpening()
     {
-        return PlayerPrefs.GetInt("sharpening", GameUpscaler.forceEnabled ? 2 : 1);
+        return PlayerPrefs.GetInt("sharpening", GameUpscaler.forceEnabled ? 2 : 3);
+    }
+
+    private static int NextSharpening(int state)
+    {
+        int index = Array.IndexOf(sharpeningCycle, state);
+        return sharpeningCycle[(index + 1) % sharpeningCycle.Length];
     }
     private static float GetSharpness()
     {
@@ -705,11 +718,7 @@ public class ControllerActions : MonoBehaviour
 
     private void OnToggleSharpeningAction()
     {
-        int state = GetSharpening();
-        state++;
-        if (state > 2)
-            state = 0;
-        PlayerPrefs.SetInt("sharpening", state);
+        PlayerPrefs.SetInt("sharpening", NextSharpening(GetSharpening()));
 
         UpdateSharpening();
     }
@@ -721,11 +730,7 @@ public class ControllerActions : MonoBehaviour
     {
         if (Input.GetButtonDown("Sharpening Toggle"))
         {
-            int state = GetSharpening();
-            state++;
-            if (state > 2)
-                state = 0;
-            PlayerPrefs.SetInt("sharpening", state);
+            PlayerPrefs.SetInt("sharpening", NextSharpening(GetSharpening()));
 
             UpdateSharpening();
         }
@@ -737,7 +742,8 @@ public class ControllerActions : MonoBehaviour
 
         int state = GetSharpening();
         sharpener.enabled = (state == 1);
-        GameUpscaler.enabled = (state == 2);
+        GameUpscaler.enabled = (state == 2 || state == 3);
+        GameUpscaler.sharpenOnly = (state == 3);
 
         float sharpness = GetSharpness();
         if (sharpness != 0.0f)

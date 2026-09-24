@@ -8,6 +8,8 @@ Shader "Unlit/sbsShader"
 	Properties
 	{
 		[NoScaleOffset] _MainTex ("_bothEyes Texture", 2D) = "grey" {}
+		[NoScaleOffset] _LeftTex ("Left eye (set by ScreenImage.cs)", 2D) = "grey" {}
+		[NoScaleOffset] _RightTex ("Right eye (set by ScreenImage.cs)", 2D) = "grey" {}
 	}
 	SubShader
 	{
@@ -18,6 +20,10 @@ Shader "Unlit/sbsShader"
 		{
 			CGPROGRAM
 			#pragma vertex vert
+			// EYE_TEXTURES: ScreenImage.cs has split the SBS image into one mipmapped,
+			// anisotropically filtered texture per eye.  Without it we fall back to
+			// sampling the SBS texture directly, as before.
+			#pragma multi_compile_local __ EYE_TEXTURES
 			#pragma fragment frag
 			
 			#include "UnityCG.cginc" 
@@ -40,6 +46,8 @@ Shader "Unlit/sbsShader"
 
 			sampler2D _MainTex;			
 			float4 _MainTex_ST;
+			sampler2D _LeftTex;
+			sampler2D _RightTex;
 
 			v2f vert (appdata v)
 			{
@@ -47,6 +55,12 @@ Shader "Unlit/sbsShader"
 				UNITY_SETUP_INSTANCE_ID(v);
 				UNITY_INITIALIZE_OUTPUT(v2f, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+			#if defined(EYE_TEXTURES)
+				// Eye split and texture scale/offset were already applied by ScreenImage.
+                o.vertex = UnityObjectToClipPos(v.vertex);
+				o.uv = v.uv;
+			#else
+
 				float4 sb;
 
 				// Modify uv fetched, based on the active eye,
@@ -68,6 +82,7 @@ Shader "Unlit/sbsShader"
 					
                 o.vertex = UnityObjectToClipPos(v.vertex);
 				o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+			#endif
 
 				return o;
 			}
@@ -91,9 +106,20 @@ Shader "Unlit/sbsShader"
 			fixed4 frag (v2f i) : SV_Target
 			{
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+
+			#if defined(EYE_TEXTURES)
+				// Mips + 16x anisotropic filtering do the anti-aliasing here.  Gradients
+				// are taken outside the per eye branch so both samples stay well defined.
+				float2 dx = ddx(i.uv);
+				float2 dy = ddy(i.uv);
+				if (unity_StereoEyeIndex == 0)
+					return tex2Dgrad(_LeftTex, i.uv, dx, dy);
+				return tex2Dgrad(_RightTex, i.uv, dx, dy);
+			#else
 				// sample the texture
 				fixed4 col = tex2Dmultisample(_MainTex, i.uv);
 				return col;
+			#endif
 			}
 			ENDCG
 		}

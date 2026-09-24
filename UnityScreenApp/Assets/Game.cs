@@ -123,6 +123,8 @@ public class Game : MonoBehaviour
     // Epic Game Store AppID      --epic-appid:
     // FSR upscale factor         --upscale:            (e.g. 1.5, turns on FSR)
     // FSR RCAS sharpness         --upscale-sharpness:  (stops, 0 = sharpest)
+    // Controller model           --controller-model:   (WebXR profile id, or auto)
+    // Eye buffer scale           --render-scale:       (e.g. 1.3 to supersample)
     //
     // Show desktop in 2D         --show-desktop
     //
@@ -192,6 +194,18 @@ public class Game : MonoBehaviour
                 i++;
                 GameUpscaler.Sharpness = Single.Parse(args[i], System.Globalization.CultureInfo.InvariantCulture);
                 print("--upscale-sharpness: " + GameUpscaler.Sharpness);
+            }
+            else if (args[i] == "--controller-model")
+            {
+                i++;
+                ControllerModel.ForcedProfile = args[i];
+                print("--controller-model: " + args[i]);
+            }
+            else if (args[i] == "--render-scale")
+            {
+                i++;
+                ScreenImage.RenderScale = Single.Parse(args[i], System.Globalization.CultureInfo.InvariantCulture);
+                print("--render-scale: " + ScreenImage.RenderScale);
             }
             else if (args[i] == "--epic-appid")
             {

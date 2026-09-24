@@ -95,6 +95,10 @@ public class LaunchAndPlay : MonoBehaviour
 
         upscaler = new GameUpscaler();
 
+        // Mipmapped per eye copies of whatever is on the screen, for clean filtering.
+        if (screenRenderer.GetComponent<ScreenImage>() == null)
+            screenRenderer.gameObject.AddComponent<ScreenImage>();
+
         // Default assumption is normal VR game connection.
         game = GetComponent<Game>();
         game.ParseGameArgs(args);
@@ -324,6 +328,7 @@ public class LaunchAndPlay : MonoBehaviour
 
         // Upscaling reads the shared surface, so only while we hold the mutex, and it
         // needs to be redone every frame since the game keeps updating that surface.
+        ScreenImage.sourceIsLive = ownMutex && gameTextureLive && _bothEyes != null;
         if (ownMutex && gameTextureLive && _bothEyes != null)
         {
             if (GameUpscaler.enabled)
@@ -332,16 +337,9 @@ public class LaunchAndPlay : MonoBehaviour
                 screenRenderer.material.mainTexture = _bothEyes;
         }
 
-        // Doing GC on an ongoing basis is recommended for VR, to avoid weird stalls
-        // at random times.
-        if (Time.frameCount % 30 == 0)
-        {
-            long gcStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            System.GC.Collect();
-            double gcMs = (System.Diagnostics.Stopwatch.GetTimestamp() - gcStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-            if (gcMs > 2.0)
-                print(string.Format("[{0:HH:mm:ss.fff}] Slow GC.Collect: {1:F1} ms", System.DateTime.Now, gcMs));
-        }
+        // No forced GC.Collect here any more.  The project uses the incremental garbage
+        // collector, which spreads collection over frames; a forced full collection every
+        // 30 frames only added its own stalls (the "Slow GC.Collect" log lines).
 
         // Log hitches with a wall clock time, so they can be matched up against
         // PresentMon captures and user actions like cycling the environment.
