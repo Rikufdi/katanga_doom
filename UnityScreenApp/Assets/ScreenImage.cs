@@ -75,6 +75,18 @@ public class ScreenImage : MonoBehaviour
         lastScale = scale;
         lastOffset = offset;
 
+        // The live game texture is shared with the game, which writes each new frame into it
+        // with no GPU sync against us.  Reading it twice, once per eye, lets a write land in
+        // between, and then the eyes show two different frames.  So take one snapshot of the
+        // whole side-by-side image first, and cut both eyes from that.
+        if (sourceIsLive)
+        {
+            source = Snapshot(source);
+
+            // We have this frame's image, the game can start on its next one.
+            LaunchAndPlay.GameFrameTaken();
+        }
+
         int width = Mathf.Max(1, source.width / 2);
         int height = Mathf.Max(1, source.height);
         Ensure(ref leftEye, width, height, "Screen Left Eye");
@@ -96,6 +108,31 @@ public class ScreenImage : MonoBehaviour
     {
         Free(ref leftEye);
         Free(ref rightEye);
+        Free(ref snapshot);
+    }
+
+    RenderTexture snapshot;
+
+    // One draw that copies the whole source, so both eyes come from one game frame.  A blit
+    // rather than CopyTexture: the shared texture is wrapped as RGBA32 whatever the game
+    // really uses (often R10G10B10A2), and a raw copy between those formats is not allowed.
+    // 10 bit keeps the precision of HDR-ish 10 bit games.
+    Texture Snapshot(Texture source)
+    {
+        if (snapshot == null || snapshot.width != source.width || snapshot.height != source.height)
+        {
+            Free(ref snapshot);
+            snapshot = new RenderTexture(source.width, source.height, 0, RenderTextureFormat.ARGB2101010, RenderTextureReadWrite.Linear)
+            {
+                name = "Screen Snapshot",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            snapshot.Create();
+        }
+
+        Graphics.Blit(source, snapshot);
+        return snapshot;
     }
 
     static void Ensure(ref RenderTexture rt, int width, int height, string name)

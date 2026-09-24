@@ -279,6 +279,13 @@ HRESULT __stdcall Hooked_Present(IDXGISwapChain * This,
 	ID3D11Device* pDevice = nullptr;
 	ID3D11DeviceContext* pContext = nullptr;
 
+	// Hold this frame until Katanga is ready for it, which paces the game to the headset.
+	WaitForVRFrame();
+
+	// 3Dmigoto shares the frames itself in this mode, we are only here for the pacing.
+	if (gPacingOnly)
+		return pOrigPresent(This, SyncInterval, Flags);
+
 	// This only happens for first device creation, because we inject into an already
 	// setup game, and thus first thing we'll see is Present.
 	if (gGameSharedHandle == NULL)
@@ -393,6 +400,10 @@ HRESULT __stdcall Hooked_ResizeBuffers(IDXGISwapChain* This,
 	HRESULT hr;
 
 	LogInfo(L"GamePlugin:Hooked_ResizeBuffers called\n");
+
+	// The shared surface belongs to 3Dmigoto in pacing only mode.
+	if (gPacingOnly)
+		return pOrigResizeBuffers(This, BufferCount, Width, Height, NewFormat, SwapChainFlags);
 
 	// Grab the KatangaSetupMutex, so that the VR side will be locked out of touching
 	// any shared surfaces until we rebuild the shared surface after CreateRenderedSurface.
@@ -587,6 +598,32 @@ void HookCreateSwapChainForHwnd(IDXGIFactory2* dDXGIFactory)
 
 		if (dwOsErr != S_OK) FatalExit(L"Failed to hook IDXGIFactory1::CreateSwapChainForHwnd", dwOsErr);
 	}
+}
+
+
+// Pacing only mode: hook the real dxgi.dll IDXGISwapChain::Present at the address Katanga
+// worked out for us (see Shared/KatangaPacing.h).  Every swap chain's Present ends up there,
+// behind whatever 3Dmigoto or an overlay puts in front of it, and we create nothing in the
+// game that 3Dmigoto could see.  ResizeBuffers is not needed for pacing.
+
+bool IsPresentHookedDX11()
+{
+	return pOrigPresent != nullptr;
+}
+
+void HookPresentAt(BYTE* present)
+{
+	HMODULE owner = NULL;
+	wchar_t ownerName[MAX_PATH] = L"?";
+	if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)present, &owner))
+		GetModuleFileNameW(owner, ownerName, MAX_PATH);
+	// A jmp here (E9 / FF 25) means an overlay hooked it first, which is fine: we chain in front.
+	LogInfo(L"GamePlugin: real IDXGISwapChain::Present at %p in %s, bytes %02X %02X %02X %02X %02X %02X\n",
+		present, ownerName, present[0], present[1], present[2], present[3], present[4], present[5]);
+
+	SIZE_T hook_id;
+	DWORD dwOsErr = nktInProc.Hook(&hook_id, (void**)&pOrigPresent, present, Hooked_Present, 0);
+	LogInfo(L"GamePlugin: pacing hook on IDXGISwapChain::Present %s (0x%x)\n", SUCCEEDED(dwOsErr) && pOrigPresent ? L"installed" : L"FAILED", dwOsErr);
 }
 
 

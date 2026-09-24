@@ -7,12 +7,16 @@
 // based calls like Present used by DX11 or DX9.
 
 #include "DeviarePlugin.h"
+#include "../Shared/KatangaPacing.h"
 
 
 #include <atlbase.h>
 #include <string>
 #include <thread>
 #include <shlobj_core.h>
+#include <psapi.h>
+#include <shlwapi.h>
+#pragma comment(lib, "shlwapi.lib")
 
 
 // We need the Deviare interface though, to be able to provide the OnLoad,
@@ -65,6 +69,69 @@ DWORD gMapSize = sizeof(UINT);
 // The Named Mutex to prevent the VR side from interfering with game side, during
 // the creation or reset of the graphic device.
 HANDLE gSetupMutex = NULL;
+
+// Auto-reset event that Katanga signals once per VR frame.  NULL when Katanga runs
+// without frame sync, and then the game presents freely as before.
+HANDLE gFrameEvent = NULL;
+
+// Pacing only mode.  For DX11 games that 3Dmigoto connects to Katanga directly, Katanga
+// injects us only to pace Present.  We then leave the shared surface, the mapped file and
+// nvapi alone, since 3Dmigoto owns those.  Katanga asks for it by publishing the
+// KatangaPacing mapping (Shared/KatangaPacing.h) and calling StartPacing.
+bool gPacingOnly = false;
+
+
+//-----------------------------------------------------------
+
+// Frame pacing.  Called at the top of every Present: in our own hooks before the frame is
+// copied to the shared surface, in pacing only mode after 3Dmigoto has copied it.  Either
+// way the game cannot start its next frame early.  Waiting for Katanga's per frame signal
+// locks the game to the headset's
+// rate and phase, so each VR frame gets exactly one new game frame instead of the two
+// clocks drifting through each other and showing repeats and skips.
+//
+// If Katanga misses a signal for 40 ms (a hitch, or it exited), we stop waiting so the
+// game can never be stalled by the VR side, and pick sync back up at the next signal.
+
+static bool gFrameSynced = true;
+
+static UINT gPresentCount = 0;
+static UINT gPresentsWaited = 0;
+
+void WaitForVRFrame()
+{
+	if (gFrameEvent == NULL)
+		return;
+
+	// Proof in the log that pacing is really on the game's Present path, and doing work.
+	gPresentCount++;
+	if (gPresentCount == 1)
+		LogInfo(L"GamePlugin: first paced Present\n");
+	else if (gPresentCount % 900 == 0)
+	{
+		LogInfo(L"GamePlugin: %u Presents, %u of the last 900 held for the VR frame\n", gPresentCount, gPresentsWaited);
+		gPresentsWaited = 0;
+	}
+
+	if (gFrameSynced)
+	{
+		// A signal that is already pending means Katanga is ahead of us, no wait needed.
+		if (WaitForSingleObject(gFrameEvent, 0) == WAIT_OBJECT_0)
+			return;
+		gPresentsWaited++;
+
+		if (WaitForSingleObject(gFrameEvent, 40) == WAIT_TIMEOUT)
+		{
+			gFrameSynced = false;
+			LogInfo(L"GamePlugin: frame sync lost, presenting freely\n");
+		}
+	}
+	else if (WaitForSingleObject(gFrameEvent, 0) == WAIT_OBJECT_0)
+	{
+		gFrameSynced = true;
+		LogInfo(L"GamePlugin: frame sync resumed\n");
+	}
+}
 
 
 //-----------------------------------------------------------
@@ -189,11 +256,87 @@ void OpenLogFile()
 
 using namespace Deviare2;
 
+// Pacing only mode entry.  Katanga calls this with SpyMgr.CallCustomApi right after
+// LoadCustomDll, because OnLoad only runs for DLLs attached to a hook as custom handler,
+// and in pacing only mode we attach to no hooks.  Safe to call again, for instance when
+// Katanga restarts for a game that still has us loaded.
+// Returns 1 when Present is hooked and waiting for Katanga's frame signal.
+
+int WINAPI StartPacing()
+{
+	if (LogFile == NULL)
+		OpenLogFile();
+
+	// Katanga publishes where the real dxgi Present is.  No mapping, no pacing only mode.
+	KatangaPacingInfo info = {};
+	HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, KATANGA_PACING_MAPPING);
+	if (mapping == NULL)
+		return 0;
+	void* view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(info));
+	if (view != nullptr)
+	{
+		memcpy(&info, view, sizeof(info));
+		UnmapViewOfFile(view);
+	}
+	CloseHandle(mapping);
+	gPacingOnly = true;
+
+	if (gFrameEvent == NULL)
+		gFrameEvent = OpenEvent(SYNCHRONIZE, false, L"KatangaFrameEvent");
+	LogInfo(L"GamePlugin: pacing only mode, KatangaFrameEvent: %p\n", gFrameEvent);
+	if (gFrameEvent == NULL)
+		return 0;
+
+	// Anything else in the game that may sit on the Present path: 3Dmigoto, overlays, etc.
+	HMODULE modules[1024];
+	DWORD needed = 0;
+	if (K32EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &needed))
+	{
+		for (DWORD i = 0; i < needed / sizeof(HMODULE) && i < 1024; i++)
+		{
+			wchar_t path[MAX_PATH];
+			if (!GetModuleFileNameW(modules[i], path, MAX_PATH))
+				continue;
+			const wchar_t* name = wcsrchr(path, L'\\') ? wcsrchr(path, L'\\') + 1 : path;
+			const wchar_t* interesting[] = { L"d3d11", L"dxgi", L"overlay", L"rtss", L"Rivatuner", L"VirtualDesktop",
+				L"nvd3dum", L"nvapi", L"nvwgf", L"Reshade", L"GameOverlay", L"obs", L"Discord", L"Special K" };
+			for (const wchar_t* key : interesting)
+			{
+				if (StrStrIW(name, key))
+				{
+					LogInfo(L"GamePlugin: module %s\n", path);
+					break;
+				}
+			}
+		}
+	}
+
+	if (!IsPresentHookedDX11())
+	{
+		// Only trust the offset when our dxgi.dll is the very same build as Katanga's.
+		HMODULE dxgi = GetModuleHandleW(L"dxgi.dll");
+		UINT32 stamp = 0, size = 0;
+		if (info.version != KATANGA_PACING_VERSION || info.presentRva == 0)
+			LogInfo(L"GamePlugin: pacing disabled, no Present offset from Katanga (version %u)\n", info.version);
+		else if (!KatangaModuleIdentity(dxgi, &stamp, &size) || stamp != info.dxgiTimeDateStamp || size != info.dxgiSizeOfImage)
+			LogInfo(L"GamePlugin: pacing disabled, game dxgi.dll %08X/%X differs from Katanga's %08X/%X (32 bit game?)\n",
+				stamp, size, info.dxgiTimeDateStamp, info.dxgiSizeOfImage);
+		else
+			HookPresentAt((BYTE*)dxgi + info.presentRva);
+	}
+
+	return IsPresentHookedDX11() ? 1 : 0;
+}
+
+
 HRESULT WINAPI OnLoad()
 {
 	OpenLogFile();
 	
 	LogInfo(L"GamePlugin::OnLoad called\n");
+
+	if (StartPacing())
+		return S_OK;
 
 	// Setup shared mutex, with the VR side owning it.  We should never arrive
 	// here without the Katanga side already having created it.
@@ -203,6 +346,10 @@ HRESULT WINAPI OnLoad()
 	LogInfo(L"GamePlugin: OpenMutex called: %p\n", gSetupMutex);
 	if (gSetupMutex == NULL)
 		FatalExit(L"OnLoad: could not find KatangaSetupMutex", GetLastError());
+
+	// Optional, only there when Katanga runs with frame sync.
+	gFrameEvent = OpenEvent(SYNCHRONIZE, false, L"KatangaFrameEvent");
+	LogInfo(L"GamePlugin: OpenEvent KatangaFrameEvent: %p (frame sync %s)\n", gFrameEvent, gFrameEvent ? L"on" : L"off");
 
 
 	// This is running inside the game itself, so make sure we can use
@@ -229,6 +376,27 @@ VOID WINAPI OnUnload()
 	{
 		UnmapViewOfFile(gMappedView);
 		CloseHandle(gMappedFile);
+	}
+
+	if (gPacingOnly)
+	{
+		// Stop pacing first, then remove the hooks so the game never calls into us once
+		// we are unloaded.  The sleep lets any Present that is still inside a 40 ms wait
+		// finish before the event goes away.
+		HANDLE frameEvent = gFrameEvent;
+		gFrameEvent = NULL;
+		nktInProc.UnhookAll();
+		Sleep(100);
+		if (frameEvent != NULL)
+			CloseHandle(frameEvent);
+		LogInfo(L"GamePlugin: pacing hooks removed\n");
+		return;
+	}
+
+	if (gFrameEvent != NULL)
+	{
+		CloseHandle(gFrameEvent);
+		gFrameEvent = NULL;
 	}
 
 	LogInfo(L"GamePlugin: ReleaseMutex for %p\n", gSetupMutex);

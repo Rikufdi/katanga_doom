@@ -287,6 +287,9 @@ HRESULT __stdcall Hooked_Present(IDirect3DDevice9* This,
 	HRESULT hr;
 	IDirect3DSurface9* backBuffer;
 
+	// Hold this frame until Katanga is ready for it, which paces the game to the headset.
+	WaitForVRFrame();
+
 	// This only happens for first device creation, because we inject into an already
 	// setup game, and thus first thing we'll see is Present in DX9Ex case.
 	if (gGameSharedHandle == NULL)

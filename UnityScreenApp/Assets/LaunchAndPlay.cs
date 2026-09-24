@@ -52,6 +52,18 @@ public class LaunchAndPlay : MonoBehaviour
     [DllImport("UnityNativePlugin64")]
     private static extern void CreateSetupMutex();
 
+    // Frame pacing: once per VR frame we signal the game side, which waits for it in
+    // Present.  That locks the game to the headset's clock.  --no-frame-sync turns it off.
+    public static bool frameSync = true;
+    private static bool frameEventCreated = false;
+
+    [DllImport("UnityNativePlugin64")]
+    private static extern bool CreateFrameEvent();
+    [DllImport("UnityNativePlugin64")]
+    private static extern void SignalFrameEvent();
+    [DllImport("UnityNativePlugin64")]
+    private static extern void DestroyFrameEvent();
+
     private void Awake()
     {
         CreateKatangaLog();
@@ -124,6 +136,17 @@ public class LaunchAndPlay : MonoBehaviour
         {
             game = GetComponent<SlideShow>();
             print("** Running as Demo Slideshow **");
+        }
+
+        // Must exist before the game side is injected, which opens it at load.
+        if (frameSync && !game.SlideShowMode())
+        {
+            frameEventCreated = CreateFrameEvent();
+            print("Frame sync: " + (frameEventCreated ? "on" : "failed to create event"));
+        }
+        else
+        {
+            print("Frame sync: off");
         }
 
         // With the game properly selected, add name to the big screen as info on launch.
@@ -392,6 +415,31 @@ public class LaunchAndPlay : MonoBehaviour
             debugprint("<- ReleaseSetupMutex, ownMutex=" + release);
 
             ownMutex = false;
+
+            // Frames where ScreenImage took no snapshot still release the game once.
+            if (frameEventCreated && !gameFrameReleased)
+                SignalFrameEvent();
+            gameFrameReleased = false;
+        }
+    }
+
+    // Release the game as soon as this frame's game image has been taken, rather than at
+    // the end of the frame.  On a shared GPU the game's ~6.5 ms of work stretches to about
+    // 10.5 ms, close to the 11.1 ms headset frame, and a late frame makes the headset show
+    // the previous one again.  Starting it right after the snapshot gives it the time
+    // Katanga spends rendering its own frame.  ScreenImage calls this after its snapshot.
+    //
+    // Note for measuring: the game now presents in the middle of Katanga's frame, so
+    // comparing game and Katanga present times shows fake repeat/skip pairs.  In the
+    // headset this was the smoothest setup tested.
+    private static bool gameFrameReleased = false;
+
+    public static void GameFrameTaken()
+    {
+        if (frameEventCreated && !gameFrameReleased)
+        {
+            SignalFrameEvent();
+            gameFrameReleased = true;
         }
     }
 
@@ -409,6 +457,9 @@ public class LaunchAndPlay : MonoBehaviour
 
         if (upscaler != null)
             upscaler.Release();
+
+        if (frameEventCreated)
+            DestroyFrameEvent();
 
         CloseFileMappedIPC();
 

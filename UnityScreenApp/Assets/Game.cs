@@ -125,6 +125,7 @@ public class Game : MonoBehaviour
     // FSR RCAS sharpness         --upscale-sharpness:  (stops, 0 = sharpest)
     // Controller model           --controller-model:   (WebXR profile id, or auto)
     // Eye buffer scale           --render-scale:       (e.g. 1.3 to supersample)
+    // Let the game run unpaced   --no-frame-sync       (by default the game is locked to the headset)
     //
     // Show desktop in 2D         --show-desktop
     //
@@ -138,6 +139,11 @@ public class Game : MonoBehaviour
             {
                 desktopMode = true;
                 return;
+            }
+            else if (args[i] == "--no-frame-sync")
+            {
+                LaunchAndPlay.frameSync = false;
+                print("--no-frame-sync");
             }
             else if (args[i] == "--game-path")
             {
@@ -476,6 +482,7 @@ public class Game : MonoBehaviour
                 default:
                     yield return WaitForGame(gameExe);
                     gameProcess = GetGameProcess(gameExe);
+                    InjectPacer(gameProcess);
                     break;
             }
         }
@@ -523,6 +530,44 @@ public class Game : MonoBehaviour
         }
 
         print(String.Format("Successfully loaded {0}", _nativeDLLName));
+    }
+
+
+    // For games where 3Dmigoto shares frames with us directly, GamePlugin is not needed for
+    // the image, but we still inject it in pacing only mode so the game waits for the
+    // headset in Present.  Pacing is optional: if injection fails, the game runs unpaced.
+
+    [DllImport("UnityNativePlugin64")]
+    private static extern bool CreatePacingOnlyFlag();
+
+    private void InjectPacer(NktProcess gameProc)
+    {
+        if (!LaunchAndPlay.frameSync || gameProc == null)
+            return;
+
+        try
+        {
+            if (!CreatePacingOnlyFlag())
+                throw new Exception("could not create KatangaPacingOnly event");
+
+            _spyMgr.LoadAgent(gameProc);
+            string pacer = PluginsDirectory() + (gameProc.PlatformBits == 64 ? "/GamePlugin64.dll" : "/GamePlugin.dll");
+
+            // Not unloaded when Katanga exits: the Present hook stays in the game, and just
+            // stops waiting once our frame signal goes quiet.  Unloading it under a running
+            // game would leave the hook pointing at freed code.
+            if (_spyMgr.LoadCustomDll(gameProc, pacer, false, true) <= 0)
+                throw new Exception(String.Format("could not load {0}: 0x{1:X}", pacer, GetLastDeviareError()));
+
+            // OnLoad only runs for hook handlers, so start pacing explicitly.
+            object noParams = null;
+            int started = _spyMgr.CallCustomApi(gameProc, pacer, "StartPacing", ref noParams, true);
+            print("Frame sync: pacing " + (started == 1 ? "active, game Present is hooked" : "NOT active, StartPacing returned " + started));
+        }
+        catch (Exception e)
+        {
+            print("Frame sync: pacing plugin not injected, game runs unpaced: " + e.Message);
+        }
     }
 
 

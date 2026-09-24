@@ -58,6 +58,12 @@ extern bool gDirectMode;
 void ReleaseSetupMutex();
 void CreateFileMappedIPC();
 void CaptureSetupMutex();
+void WaitForVRFrame();
+void HookPresentAt(BYTE* present);
+int WINAPI StartPacing();
+void OpenLogFile();
+extern bool gPacingOnly;
+bool IsPresentHookedDX11();
 
 // DX9 - InProc_DX9.cpp
 void HookDirect3DCreate9();

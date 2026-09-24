@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <d3d11.h>
+#include "../Shared/KatangaPacing.h"
 
 // --------------------------------------------------------------------------
 // SetTimeFromUnity, an example function we export which is called by one of the scripts.
@@ -153,6 +154,115 @@ extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API ReleaseSetupMutex()
 extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API DestroySetupMutex()
 {
 	return s_CurrentAPI->DestroySetupMutex();
+}
+
+// Frame pacing.  The game and the headset each run their own clock, so even at the same
+// nominal rate they drift, and the headset periodically shows a game frame twice and then
+// skips one.  Katanga signals this auto-reset event once per VR frame, and GamePlugin waits
+// for it in Present, which locks the game to the headset's rate and phase.  Games opened
+// without this event (sync disabled, or an older Katanga) run free as before.
+
+static HANDLE s_FrameEvent = NULL;
+static HANDLE s_PacingOnlyFlag = NULL;
+
+extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreateFrameEvent()
+{
+	if (s_FrameEvent == NULL)
+		s_FrameEvent = CreateEvent(NULL, FALSE, FALSE, L"KatangaFrameEvent");
+	return s_FrameEvent != NULL;
+}
+extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API SignalFrameEvent()
+{
+	if (s_FrameEvent != NULL)
+		SetEvent(s_FrameEvent);
+}
+extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API DestroyFrameEvent()
+{
+	if (s_FrameEvent != NULL)
+	{
+		CloseHandle(s_FrameEvent);
+		s_FrameEvent = NULL;
+	}
+	if (s_PacingOnlyFlag != NULL)
+	{
+		CloseHandle(s_PacingOnlyFlag);
+		s_PacingOnlyFlag = NULL;
+	}
+}
+
+// For games that 3Dmigoto connects directly, GamePlugin is injected only to pace Present.
+// This publishes where the real IDXGISwapChain::Present is, found here in Katanga's own
+// process where no 3Dmigoto wraps our swap chains.  See Shared/KatangaPacing.h.
+// The mapping also tells GamePlugin to run in pacing only mode.
+
+static UINT64 FindPresentRva(HMODULE dxgi)
+{
+	HMODULE d3d11 = GetModuleHandleW(L"d3d11.dll");
+	PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN create = d3d11 == NULL ? nullptr :
+		(PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN)GetProcAddress(d3d11, "D3D11CreateDeviceAndSwapChain");
+	if (create == nullptr)
+		return 0;
+
+	HWND window = CreateWindowExW(0, L"STATIC", L"KatangaPacingProbe", WS_OVERLAPPED, 0, 0, 16, 16,
+		NULL, NULL, NULL, NULL);
+
+	DXGI_SWAP_CHAIN_DESC desc = {};
+	desc.BufferCount = 1;
+	desc.BufferDesc.Width = 16;
+	desc.BufferDesc.Height = 16;
+	desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	desc.OutputWindow = window;
+	desc.SampleDesc.Count = 1;
+	desc.Windowed = TRUE;
+	desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+	UINT64 rva = 0;
+	IDXGISwapChain* swapChain = nullptr;
+	ID3D11Device* device = nullptr;
+	ID3D11DeviceContext* context = nullptr;
+	if (SUCCEEDED(create(nullptr, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, nullptr, 0, D3D11_SDK_VERSION,
+		&desc, &swapChain, &device, nullptr, &context)))
+	{
+		// IDXGISwapChain::Present is vtable slot 8.
+		BYTE* present = (BYTE*)(*(void***)swapChain)[8];
+		HMODULE owner = NULL;
+		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			(LPCWSTR)present, &owner) && owner == dxgi)
+			rva = present - (BYTE*)dxgi;
+	}
+
+	if (context) context->Release();
+	if (swapChain) swapChain->Release();
+	if (device) device->Release();
+	if (window) DestroyWindow(window);
+	return rva;
+}
+
+extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreatePacingOnlyFlag()
+{
+	if (s_PacingOnlyFlag != NULL)
+		return true;
+
+	KatangaPacingInfo info = {};
+	info.version = KATANGA_PACING_VERSION;
+	HMODULE dxgi = GetModuleHandleW(L"dxgi.dll");
+	if (!KatangaModuleIdentity(dxgi, &info.dxgiTimeDateStamp, &info.dxgiSizeOfImage))
+		return false;
+	info.presentRva = FindPresentRva(dxgi);
+	if (info.presentRva == 0)
+		return false;
+
+	s_PacingOnlyFlag = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(info),
+		KATANGA_PACING_MAPPING);
+	if (s_PacingOnlyFlag == NULL)
+		return false;
+	void* view = MapViewOfFile(s_PacingOnlyFlag, FILE_MAP_WRITE, 0, 0, sizeof(info));
+	if (view == nullptr)
+		return false;
+	memcpy(view, &info, sizeof(info));
+	UnmapViewOfFile(view);
+	return true;
 }
 
 extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API OpenFileMappedIPC()

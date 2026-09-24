@@ -4,4 +4,5 @@ EXPORTS
   OnHookAdded    @3
   OnHookRemoved  @4
   OnFunctionCall @5
+  StartPacing    @6
   
