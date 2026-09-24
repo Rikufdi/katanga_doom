@@ -329,6 +329,30 @@ int WINAPI StartPacing()
 }
 
 
+// 32 bit Present probe.  Katanga (64 bit) runs this for 32 bit games as
+//   %windir%\SysWOW64\rundll32.exe "<Plugins>\GamePlugin.dll",ProbePresent
+// It runs in that clean 32 bit process, never in a game, finds dxgi.dll's Present there, and
+// writes it into the KatangaPacing mapping Katanga created.  StartPacing in the 32 bit game
+// then hooks the same address, since system DLLs load at the same address in every process.
+
+extern "C" void CALLBACK ProbePresent(HWND, HINSTANCE, LPSTR, int)
+{
+	KatangaPacingInfo info = {};
+	KatangaFindPresent(&info);
+
+	HANDLE mapping = OpenFileMappingW(FILE_MAP_WRITE, FALSE, KATANGA_PACING_MAPPING);
+	if (mapping == NULL)
+		return;
+	void* view = MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, sizeof(info));
+	if (view != nullptr)
+	{
+		memcpy(view, &info, sizeof(info));
+		UnmapViewOfFile(view);
+	}
+	CloseHandle(mapping);
+}
+
+
 HRESULT WINAPI OnLoad()
 {
 	OpenLogFile();

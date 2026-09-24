@@ -538,7 +538,9 @@ public class Game : MonoBehaviour
     // headset in Present.  Pacing is optional: if injection fails, the game runs unpaced.
 
     [DllImport("UnityNativePlugin64")]
-    private static extern bool CreatePacingOnlyFlag();
+    [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
+    private static extern bool CreatePacingOnlyFlag([MarshalAs(UnmanagedType.I1)] bool game32,
+        [MarshalAs(UnmanagedType.LPWStr)] string gamePlugin32);
 
     private void InjectPacer(NktProcess gameProc)
     {
@@ -547,11 +549,15 @@ public class Game : MonoBehaviour
 
         try
         {
-            if (!CreatePacingOnlyFlag())
-                throw new Exception("could not create KatangaPacingOnly event");
+            // Where the real dxgi.dll Present is.  For 32 bit games the 32 bit GamePlugin.dll
+            // finds it in a 32 bit rundll32, since Katanga itself is 64 bit.
+            bool game32 = gameProc.PlatformBits == 32;
+            string pacer = Path.GetFullPath(PluginsDirectory() + (game32 ? "/GamePlugin.dll" : "/GamePlugin64.dll"));
+            if (!CreatePacingOnlyFlag(game32, pacer))
+                throw new Exception(game32 ? "could not find the 32 bit dxgi.dll Present (32 bit probe failed)"
+                                           : "could not find the dxgi.dll Present");
 
             _spyMgr.LoadAgent(gameProc);
-            string pacer = PluginsDirectory() + (gameProc.PlatformBits == 64 ? "/GamePlugin64.dll" : "/GamePlugin.dll");
 
             // Not unloaded when Katanga exits: the Present hook stays in the game, and just
             // stops waiting once our frame signal goes quiet.  Unloading it under a running

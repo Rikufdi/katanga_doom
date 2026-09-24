@@ -83,7 +83,12 @@ CI workflow also put a complete Deviare set (`DeviareCOM(64).dll`, `DvAgent(64).
   only turns it Off again in VR mode when SteamVR initialised and the desktop refresh is lower than
   the headset's. With vsync forced on, Katanga's desktop mirror window waits on the monitor, which
   held the whole VR loop at 60 fps on a 60 Hz TV. Fix: an NVIDIA program profile for
-  `katanga.exe` with **Vertical sync: Off**, which overrides the global setting.
+  `katanga.exe` with **Vertical sync: Off**, which overrides the global setting. Katanga makes
+  sure of that itself at startup (`UnityNativePlugin/DriverProfile.cpp`, NvAPI DRS): it reuses the
+  profile that holds `katanga.exe` or creates "Katanga VR", and sets VSYNCMODE force off and
+  adaptive vsync off. The driver reads profiles when a process starts, so a profile created now
+  takes effect from the next launch. `Player.log` says `NVIDIA profile: ...`. Writing needs admin
+  rights, which Katanga has under 3DFM. `--no-vsync-profile` skips it.
 - That check initialises OpenVR as an overlay application (`SteamVR.Init` in
   `OpenVRApiModule`), which starts SteamVR if it isn't running. Katanga then opens its OpenXR
   session on the active runtime (Virtual Desktop's VDXR here), Virtual Desktop switches away from
@@ -121,12 +126,16 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
   Katanga finds `Present` in its own clean process and publishes its offset in `dxgi.dll` through
   the `Local\KatangaPacing` mapping (`Shared/KatangaPacing.h`). System DLLs load at the same
   address in every process for the whole boot, and the plugin checks the `dxgi.dll` build matches.
-  Katanga is 64 bit, so 32 bit DX11Exe games are not paced (logged, not an error).
+  Katanga is 64 bit and can't look into the 32 bit `dxgi.dll`, so for 32 bit games it runs
+  `%windir%\SysWOW64\rundll32.exe "<Plugins>\GamePlugin.dll",ProbePresent`: the 32 bit plugin
+  finds `Present` in that clean 32 bit process and fills in the mapping.
 - Proof in `katanga.log`: `pacing hook on IDXGISwapChain::Present installed`, `first paced
   Present`, and every 900 presents `N of the last 900 held for the VR frame`. `Player.log` says
   `Frame sync: pacing active` or why not.
-- Requirements: the `katanga.exe` vsync-off profile above, and the 3DFM limiter at unlimited.
-- `local/pacetest/` (see `local/MACHINE.md`) tests the pacing plugin without a game or headset.
+- Requirements: the `katanga.exe` vsync-off profile above (Katanga sets it), and the 3DFM limiter
+  at unlimited.
+- `local/pacetest/` (see `local/MACHINE.md`) tests the pacing plugin without a game or headset,
+  64 and 32 bit, including the 32 bit `rundll32` probe (`pacetest32.exe <GamePlugin.dll> probe`).
 
 ## Testing and measuring
 
@@ -173,7 +182,6 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
 - With frame sync, a game frame that doesn't finish within the headset frame (heavy scenes, the
   game's own save or loading stalls) is shown one frame late: a small drop, no judder. Lower game
   settings or a lower headset refresh rate give it more room.
-- Katanga does not yet set its own vsync-off NVIDIA profile; users must add it (see 3DFixManager).
 - VRAM: Katanga falls to about 4–6 fps when VRAM is nearly full, for example with a local AI
   model server loaded. Check `nvidia-smi` and per-process GPU memory before profiling.
 

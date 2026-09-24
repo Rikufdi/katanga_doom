@@ -58,6 +58,7 @@ public class LaunchAndPlay : MonoBehaviour
     private static bool frameEventCreated = false;
 
     [DllImport("UnityNativePlugin64")]
+    [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
     private static extern bool CreateFrameEvent();
     [DllImport("UnityNativePlugin64")]
     private static extern void SignalFrameEvent();
@@ -81,6 +82,34 @@ public class LaunchAndPlay : MonoBehaviour
         // the graphic environment.
         print("CreateSetupMutex");
         CreateSetupMutex();
+
+        EnsureDriverProfile();
+    }
+
+    // Katanga's desktop mirror window must never wait for vsync: with vsync forced on (as
+    // 3DFixManager does globally at every game launch) it throttles the whole VR loop to the
+    // desktop display's rate.  Make sure katanga.exe has an NVIDIA profile with vsync off.
+    // --no-vsync-profile skips this.
+
+    [DllImport("UnityNativePlugin64")]
+    private static extern int EnsureKatangaDriverProfile(out int status);
+
+    private void EnsureDriverProfile()
+    {
+        if (Array.IndexOf(Environment.GetCommandLineArgs(), "--no-vsync-profile") >= 0)
+        {
+            print("NVIDIA profile: skipped (--no-vsync-profile)");
+            return;
+        }
+
+        int result = EnsureKatangaDriverProfile(out int status);
+        switch (result)
+        {
+            case 0: print("NVIDIA profile: vsync already forced off for Katanga"); break;
+            case 1: print("NVIDIA profile: vsync forced off for Katanga, takes effect next time Katanga starts"); break;
+            case 2: print("NVIDIA profile: no NVIDIA driver, not needed"); break;
+            default: print(String.Format("NVIDIA profile: could not set vsync off for Katanga (NvAPI status {0}). If Katanga runs at the desktop's refresh rate, set Vertical sync Off for katanga.exe in the NVIDIA Control Panel.", status)); break;
+        }
     }
 
     // -----------------------------------------------------------------------------
@@ -329,6 +358,7 @@ public class LaunchAndPlay : MonoBehaviour
     // any game side usage during the time this Unity side is drawing.
 
     [DllImport("UnityNativePlugin64")]
+    [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
     private static extern bool GrabSetupMutex();
 
     void Update()
@@ -401,6 +431,7 @@ public class LaunchAndPlay : MonoBehaviour
     // we might be drawing from the shared surface.
 
     [DllImport("UnityNativePlugin64")]
+    [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
     private static extern bool ReleaseSetupMutex();
 
     private IEnumerator EndOfFrame()

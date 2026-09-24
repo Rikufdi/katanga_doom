@@ -232,6 +232,7 @@
     <ClCompile Include="RenderAPI.cpp" />
     <ClCompile Include="RenderAPI_D3D11.cpp" />
     <ClCompile Include="RenderingPlugin.cpp" />
+    <ClCompile Include="DriverProfile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="RenderingPlugin.def" />

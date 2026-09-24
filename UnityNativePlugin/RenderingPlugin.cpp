@@ -191,78 +191,59 @@ extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API DestroyFrameEvent()
 }
 
 // For games that 3Dmigoto connects directly, GamePlugin is injected only to pace Present.
-// This publishes where the real IDXGISwapChain::Present is, found here in Katanga's own
-// process where no 3Dmigoto wraps our swap chains.  See Shared/KatangaPacing.h.
-// The mapping also tells GamePlugin to run in pacing only mode.
+// This publishes where the real IDXGISwapChain::Present is, found outside the game where no
+// 3Dmigoto wraps swap chains.  See Shared/KatangaPacing.h.  The mapping also tells
+// GamePlugin to run in pacing only mode.
+//
+// 64 bit games: found right here in Katanga.  32 bit games: Katanga can't look into the 32 bit
+// dxgi.dll, so the 32 bit GamePlugin.dll does it in a 32 bit rundll32 and fills the mapping.
 
-static UINT64 FindPresentRva(HMODULE dxgi)
+static bool RunPresentProbe32(const wchar_t* gamePlugin32)
 {
-	HMODULE d3d11 = GetModuleHandleW(L"d3d11.dll");
-	PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN create = d3d11 == NULL ? nullptr :
-		(PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN)GetProcAddress(d3d11, "D3D11CreateDeviceAndSwapChain");
-	if (create == nullptr)
-		return 0;
+	wchar_t rundll32[MAX_PATH];
+	GetWindowsDirectoryW(rundll32, MAX_PATH);
+	wcscat_s(rundll32, MAX_PATH, L"\\SysWOW64\\rundll32.exe");
 
-	HWND window = CreateWindowExW(0, L"STATIC", L"KatangaPacingProbe", WS_OVERLAPPED, 0, 0, 16, 16,
-		NULL, NULL, NULL, NULL);
+	wchar_t commandLine[2 * MAX_PATH + 64];
+	swprintf_s(commandLine, L"\"%s\" \"%s\",%hs", rundll32, gamePlugin32, KATANGA_PACING_PROBE_EXPORT);
 
-	DXGI_SWAP_CHAIN_DESC desc = {};
-	desc.BufferCount = 1;
-	desc.BufferDesc.Width = 16;
-	desc.BufferDesc.Height = 16;
-	desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	desc.OutputWindow = window;
-	desc.SampleDesc.Count = 1;
-	desc.Windowed = TRUE;
-	desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-	UINT64 rva = 0;
-	IDXGISwapChain* swapChain = nullptr;
-	ID3D11Device* device = nullptr;
-	ID3D11DeviceContext* context = nullptr;
-	if (SUCCEEDED(create(nullptr, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, nullptr, 0, D3D11_SDK_VERSION,
-		&desc, &swapChain, &device, nullptr, &context)))
-	{
-		// IDXGISwapChain::Present is vtable slot 8.
-		BYTE* present = (BYTE*)(*(void***)swapChain)[8];
-		HMODULE owner = NULL;
-		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-			(LPCWSTR)present, &owner) && owner == dxgi)
-			rva = present - (BYTE*)dxgi;
-	}
-
-	if (context) context->Release();
-	if (swapChain) swapChain->Release();
-	if (device) device->Release();
-	if (window) DestroyWindow(window);
-	return rva;
+	STARTUPINFOW si = { sizeof(si) };
+	PROCESS_INFORMATION pi = {};
+	if (!CreateProcessW(rundll32, commandLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+		return false;
+	bool finished = WaitForSingleObject(pi.hProcess, 10000) == WAIT_OBJECT_0;
+	if (!finished)
+		TerminateProcess(pi.hProcess, 1);
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+	return finished;
 }
 
-extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreatePacingOnlyFlag()
+// Returns true when the mapping holds a usable Present offset for the game's bitness.
+extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreatePacingOnlyFlag(bool game32, const wchar_t* gamePlugin32)
 {
-	if (s_PacingOnlyFlag != NULL)
-		return true;
-
 	KatangaPacingInfo info = {};
-	info.version = KATANGA_PACING_VERSION;
-	HMODULE dxgi = GetModuleHandleW(L"dxgi.dll");
-	if (!KatangaModuleIdentity(dxgi, &info.dxgiTimeDateStamp, &info.dxgiSizeOfImage))
+	if (!game32 && !KatangaFindPresent(&info))
 		return false;
-	info.presentRva = FindPresentRva(dxgi);
-	if (info.presentRva == 0)
-		return false;
+	if (game32)
+		info.version = KATANGA_PACING_VERSION;   // offset filled in by the 32 bit probe below
 
-	s_PacingOnlyFlag = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(info),
-		KATANGA_PACING_MAPPING);
+	if (s_PacingOnlyFlag == NULL)
+		s_PacingOnlyFlag = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(info),
+			KATANGA_PACING_MAPPING);
 	if (s_PacingOnlyFlag == NULL)
 		return false;
 	void* view = MapViewOfFile(s_PacingOnlyFlag, FILE_MAP_WRITE, 0, 0, sizeof(info));
 	if (view == nullptr)
 		return false;
 	memcpy(view, &info, sizeof(info));
+
+	if (game32 && (gamePlugin32 == nullptr || !RunPresentProbe32(gamePlugin32)))
+		((KatangaPacingInfo*)view)->presentRva = 0;
+	bool usable = ((KatangaPacingInfo*)view)->presentRva != 0;
+
 	UnmapViewOfFile(view);
-	return true;
+	return usable;
 }
 
 extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API OpenFileMappedIPC()

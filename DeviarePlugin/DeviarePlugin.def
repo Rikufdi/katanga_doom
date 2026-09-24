@@ -5,4 +5,5 @@ EXPORTS
   OnHookRemoved  @4
   OnFunctionCall @5
   StartPacing    @6
+  ProbePresent   @7
   
