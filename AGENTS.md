@@ -103,6 +103,11 @@ CI workflow also put a complete Deviare set (`DeviareCOM(64).dll`, `DvAgent(64).
   confirmed; the toggle code itself is trivial.
 - The first seconds after a game starts have 80–160 ms frames while the shared surface is created
   and recreated.
+- On a Quest 3 the controllers are detected correctly (`meta-quest-touch-plus-v2`), but the model
+  looks like a special edition (possibly the Xbox edition of the Quest 3S controllers), not the
+  standard Touch Plus. Cosmetic only; low priority.
+- VRAM: Katanga falls to about 4–6 fps when VRAM is nearly full, for example with a local AI
+  model server loaded. Check `nvidia-smi` and per-process GPU memory before profiling.
 
 ## `local/` (gitignored, never commit)
 

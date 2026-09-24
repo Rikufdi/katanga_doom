@@ -58,6 +58,7 @@ MonoBehaviour:
   - {fileID: 2250880564209511537}
   - {fileID: -833340073977467936}
   - {fileID: 2309823002075836092}
+  - {fileID: -8126815633888986421}
   customLoaderName: 
   m_renderMode: 1
   m_latencyOptimization: 0
@@ -73,6 +74,28 @@ MonoBehaviour:
   m_hasMigratedMultiviewRenderRegionSetting: 1
   m_foveatedRenderingApi: 1
   m_useOpenXRPredictedTime: 1
+--- !u!114 &-8126815633888986421
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62fd28be12b94dd789c68765582803ac, type: 3}
+  m_Name: KatangaSystemInfo Standalone
+  m_EditorClassIdentifier: Assembly-CSharp::KatangaSystemInfo
+  m_enabled: 1
+  nameUi: Katanga System Info
+  version: 1.0.0
+  featureIdInternal: com.katanga.systeminfo
+  openxrExtensionStrings: 
+  company: Katanga
+  priority: 0
+  targetOpenXRApiVersion: 
+  required: 0
+  customRuntimeLoaderName: 
 --- !u!114 &-7864753663746663318
 MonoBehaviour:
   m_ObjectHideFlags: 0
