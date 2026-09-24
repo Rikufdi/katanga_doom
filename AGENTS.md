@@ -77,8 +77,51 @@ CI workflow also put a complete Deviare set (`DeviareCOM(64).dll`, `DvAgent(64).
 - Before Play VR it runs a SteamVR check (`SteamVR.Init` in `VrHelper.GetVrState`). This is left
   over from the OpenVR version of Katanga; the Unity 6 build itself uses OpenXR and does not need
   SteamVR.
-- Its `VrFramerateLimit` setting caps the game (90 fps is common). With the headset at
-  120 Hz, set it to 120 or run the headset at 90 Hz.
+- Its `VrFramerateLimit` setting caps the game. **With Katanga's frame sync (below), set it to
+  unlimited**: a second limiter fights the pacing.
+- **It forces NVIDIA's global vsync On at every game launch** (`SetVsyncMode(VsyncMode.On)`), and
+  only turns it Off again in VR mode when SteamVR initialised and the desktop refresh is lower than
+  the headset's. With vsync forced on, Katanga's desktop mirror window waits on the monitor, which
+  held the whole VR loop at 60 fps on a 60 Hz TV. Fix: an NVIDIA program profile for
+  `katanga.exe` with **Vertical sync: Off**, which overrides the global setting.
+- It starts SteamVR for that check. Katanga then opens its OpenXR session on the active runtime
+  (Virtual Desktop's VDXR here), Virtual Desktop switches away from SteamVR, and SteamVR exits.
+  If launches fail, start SteamVR before pressing Play VR.
+- Most DX11 games launch as `DX11Exe`: the fix's 3Dmigoto `d3d11.dll` shares frames with Katanga
+  itself ("DirectConnection"), and GamePlugin is only injected for pacing (see Frame pacing).
+
+## Frame pacing (frame sync)
+
+The game and the headset each run their own clock. Even at the same nominal rate they drift,
+and while the game's frames land near the moment Katanga takes the image, the headset shows
+game frames twice and skips others: judder when the camera pans. No frame limiter can fix that,
+because it doesn't know when the headset refreshes. Katanga instead makes the game wait for it:
+
+- Katanga creates the auto-reset event `KatangaFrameEvent` and signals it once per VR frame,
+  right after `ScreenImage` has taken its snapshot of the game image
+  (`LaunchAndPlay.GameFrameTaken`, with a fallback at `EndOfFrame`). The game plugin waits for
+  it (at most 40 ms, then runs free until the signal returns) at the top of `Present`, so the game
+  presents exactly once per headset frame. `--no-frame-sync` turns it off.
+- Releasing at the end of Katanga's frame instead was also tried. It looked worse in the
+  headset: on the shared GPU the game's ~6.5 ms of work stretches to ~10.5 ms, and it needs the
+  extra time.
+- `ScreenImage` takes **one** snapshot of the side-by-side image before cutting the eyes. Two reads
+  of the shared texture let the game's write land between them, and the eyes then show different
+  frames ("two frames mixed"), which pacing made happen every frame.
+- For `DX11Exe` (3Dmigoto) games Katanga injects GamePlugin in **pacing only mode**: it loads it
+  with `LoadCustomDll` (not unloaded on exit, so the hook never points at freed code) and calls the
+  exported `StartPacing` through `CallCustomApi`, because `OnLoad` only runs for DLLs attached to a
+  hook. The plugin must hook the **real** `dxgi.dll` `IDXGISwapChain::Present`: a swap chain
+  created inside the game comes back wrapped by 3Dmigoto, whose `Present` the game doesn't use.
+  Katanga finds `Present` in its own clean process and publishes its offset in `dxgi.dll` through
+  the `Local\KatangaPacing` mapping (`Shared/KatangaPacing.h`). System DLLs load at the same
+  address in every process for the whole boot, and the plugin checks the `dxgi.dll` build matches.
+  Katanga is 64 bit, so 32 bit DX11Exe games are not paced (logged, not an error).
+- Proof in `katanga.log`: `pacing hook on IDXGISwapChain::Present installed`, `first paced
+  Present`, and every 900 presents `N of the last 900 held for the VR frame`. `Player.log` says
+  `Frame sync: pacing active` or why not.
+- Requirements: the `katanga.exe` vsync-off profile above, and the 3DFM limiter at unlimited.
+- `local/pacetest/` (see `local/MACHINE.md`) tests the pacing plugin without a game or headset.
 
 ## Testing and measuring
 
@@ -92,10 +135,26 @@ CI workflow also put a complete Deviare set (`DeviareCOM(64).dll`, `DvAgent(64).
     One `ReleaseMutex ERROR_NOT_OWNER` per frame is expected (a deliberate double release).
 - **Frame timing:** PresentMon on `katanga.exe` gives Katanga's own frame times, because Unity
   presents its mirror window once per frame. Run a second PresentMon on the game exe to get the
-  game's own frame rate.
-- **A pattern to recognise:** runs of frames at *exactly* 100 ms with an idle GPU most likely mean the
-  OpenXR runtime is throttling Katanga, probably while a Virtual Desktop menu is open (not yet
-  confirmed). It is not Katanga's own workload.
+  game's own frame rate. PresentMon traps, all hit in practice:
+  - 2.5.1 takes **one** `--process_name`; a second one silently matches nothing. Run one session
+    per process with `--date_time`, which puts both files on the same clock.
+  - Without admin rights it only resolves names of processes that already run when it starts, so
+    start it after the game and Katanga are up.
+  - A PresentMon that is killed can leave its ETW session behind (`logman query -ets`), which then
+    starves new captures (tens of thousands of lost events, empty output). Stop sessions with
+    `PresentMon --terminate_existing_session --session_name <name>`, not by killing the process.
+- **Judging pacing from present times is only valid when the game presents before Katanga's
+  image snapshot.** With the game released right after the snapshot, it presents in the middle of
+  Katanga's frame, and comparing present times shows fake repeat/skip pairs. Trust the headset.
+- **Unreal Engine games drop to 3 fps whenever their window is not in the foreground**, for
+  example when alt-tabbing out during a test. Ignore those stretches.
+- **Patterns to recognise:**
+  - Runs of frames at *exactly* 100 or 200 ms with an idle GPU mean the OpenXR runtime (Virtual
+    Desktop) is throttling Katanga. It is not Katanga's own workload, and it also pauses pacing.
+  - Katanga at exactly 60 fps on a 90 Hz headset: forced vsync on a 60 Hz desktop display (see
+    3DFixManager above).
+  - The game at 144 fps and GPU near 100% with "frame sync on": pacing is not reaching the game's
+    `Present`. Check `katanga.log` for `first paced Present`.
 
 ## Known issues
 
@@ -106,6 +165,10 @@ CI workflow also put a complete Deviare set (`DeviareCOM(64).dll`, `DvAgent(64).
 - On a Quest 3 the controllers are detected correctly (`meta-quest-touch-plus-v2`), but the model
   looks like a special edition (possibly the Xbox edition of the Quest 3S controllers), not the
   standard Touch Plus. Cosmetic only; low priority.
+- With frame sync, a game frame that doesn't finish within the headset frame (heavy scenes, the
+  game's own save or loading stalls) is shown one frame late: a small drop, no judder. Lower game
+  settings or a lower headset refresh rate give it more room.
+- Katanga does not yet set its own vsync-off NVIDIA profile; users must add it (see 3DFixManager).
 - VRAM: Katanga falls to about 4–6 fps when VRAM is nearly full, for example with a local AI
   model server loaded. Check `nvidia-smi` and per-process GPU memory before profiling.
 
