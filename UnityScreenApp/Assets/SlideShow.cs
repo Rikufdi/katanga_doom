@@ -3,6 +3,7 @@ using System.Collections;
 using System.IO;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 
 // This is a subclass of the Game object.  Game object is setup to inject into and run
@@ -56,7 +57,7 @@ public class SlideShow : Game
 
         // Start with first one.
         float spinTime = 0;
-        LoadNextJPS();
+        yield return LoadNextJPS();
 
         // Disable "Launching..." as we start showing slides.
         infoText.gameObject.SetActive(false);
@@ -65,7 +66,7 @@ public class SlideShow : Game
         {
             if (skip)
             {
-                LoadNextJPS();
+                yield return LoadNextJPS();
 
                 skip = false;
                 spinTime = 0.0f;
@@ -76,7 +77,7 @@ public class SlideShow : Game
 
                 if (spinTime > 5.0f)
                 {
-                    LoadNextJPS();
+                    yield return LoadNextJPS();
 
                     skip = false;
                     spinTime = 0.0f;
@@ -138,22 +139,42 @@ public class SlideShow : Game
     // -----------------------------------------------------------------------------
 
     private int index = 0;
+    private Texture2D currentTex;
 
-    public void LoadNextJPS()
+    // Decoding a 3840x1080 jpg on the main thread stalls a frame for 100ms+, which is
+    // very visible in VR.  UnityWebRequestTexture decodes on a worker thread, and we
+    // keep showing the current slide until the next one is ready.
+    public IEnumerator LoadNextJPS()
     {
         Texture2D stereoTex = null;
-        byte[] fileData;
         string filePath = stereoFiles[index];
 
         if (File.Exists(filePath))
         {
-            fileData = File.ReadAllBytes(filePath);
-            stereoTex = new Texture2D(2, 2);
-            stereoTex.LoadImage(fileData);            //..this will auto-resize the texture dimensions.
+            // Non-readable drops the CPU side copy once it's uploaded to the GPU.
+            DownloadedTextureParams texParams = DownloadedTextureParams.Default;
+            texParams.readable = false;
+            texParams.mipmapChain = true;
+
+            using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(new Uri(filePath), texParams))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result == UnityWebRequest.Result.Success)
+                    stereoTex = DownloadHandlerTexture.GetContent(request);
+                else
+                    Debug.LogWarning("SlideShow: failed to load " + filePath + ": " + request.error);
+            }
         }
 
         Material screenMaterial = screen.material;
         screenMaterial.mainTexture = stereoTex;
+
+        // Textures are not garbage collected, so the previous slide must be destroyed
+        // explicitly or every slide leaks its full size in RAM and VRAM.
+        if (currentTex != null)
+            Destroy(currentTex);
+        currentTex = stereoTex;
 
         // The loaded image will be upside down, because JPG does not follow OpenGL coordinate
         // systems.  Invert the image in Y axis by using the TextureScale trick.

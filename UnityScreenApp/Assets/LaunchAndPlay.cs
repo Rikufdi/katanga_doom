@@ -335,7 +335,18 @@ public class LaunchAndPlay : MonoBehaviour
         // Doing GC on an ongoing basis is recommended for VR, to avoid weird stalls
         // at random times.
         if (Time.frameCount % 30 == 0)
+        {
+            long gcStart = System.Diagnostics.Stopwatch.GetTimestamp();
             System.GC.Collect();
+            double gcMs = (System.Diagnostics.Stopwatch.GetTimestamp() - gcStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            if (gcMs > 2.0)
+                print(string.Format("[{0:HH:mm:ss.fff}] Slow GC.Collect: {1:F1} ms", System.DateTime.Now, gcMs));
+        }
+
+        // Log hitches with a wall clock time, so they can be matched up against
+        // PresentMon captures and user actions like cycling the environment.
+        if (Time.unscaledDeltaTime > 0.025f && Time.frameCount > 100)
+            print(string.Format("[{0:HH:mm:ss.fff}] Hitch: {1:F1} ms frame", System.DateTime.Now, Time.unscaledDeltaTime * 1000f));
 
         // On game exit, we want to switch to DesktopDuplication view, rather than exit.
         if (game.Exited())

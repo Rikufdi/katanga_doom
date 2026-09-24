@@ -650,7 +650,7 @@ public class ControllerActions : MonoBehaviour
     private void UpdateFloor()
     {
         int state = GetFloor();
-        print("Set environment state: " + state);
+        print(string.Format("[{0:HH:mm:ss.fff}] Set environment state: {1}", System.DateTime.Now, state));
 
         ParticleSystem.EmissionModule leftSnow = leftEmitter.GetComponent<ParticleSystem>().emission;
         ParticleSystem.EmissionModule rightSnow = rightEmitter.GetComponent<ParticleSystem>().emission;
@@ -743,7 +743,7 @@ public class ControllerActions : MonoBehaviour
         if (sharpness != 0.0f)
             sharpener.sharpenAmount = sharpness;
 
-        print("Sharpening state: " + state + " sharpness: " + sharpness);
+        print(string.Format("[{0:HH:mm:ss.fff}] Sharpening state: {1} sharpness: {2}", System.DateTime.Now, state, sharpness));
     }
 
     // -----------------------------------------------------------------------------
@@ -785,7 +785,7 @@ public class ControllerActions : MonoBehaviour
 
         billboard.transform.eulerAngles = angles;
         
-        print("Hint state: " + state);
+        print(string.Format("[{0:HH:mm:ss.fff}] Hint state: {1}", System.DateTime.Now, state));
     }
 
 
