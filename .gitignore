@@ -66,3 +66,10 @@ UnityScreenApp/*.sln
 # New for VS2017
 /.vs/*
 UnityScreenApp/.vs/*
+
+# Local-only research and tools (decompiled third-party code, decompiler).
+# See AGENTS.md.  Never commit this folder.
+/local/
+
+# Unity batchmode build log
+unity_build.log
