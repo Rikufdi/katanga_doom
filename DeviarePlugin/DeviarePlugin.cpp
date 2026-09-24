@@ -10,6 +10,7 @@
 
 
 #include <atlbase.h>
+#include <string>
 #include <thread>
 #include <shlobj_core.h>
 
