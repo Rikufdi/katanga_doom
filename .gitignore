@@ -77,3 +77,10 @@ unity_build.log
 # Auto-baked lighting for the main scene; not referenced by the scene.
 UnityScreenApp/Assets/BigScreen 3D/
 UnityScreenApp/Assets/BigScreen 3D.meta
+
+# Build output of the optional 3DFixManager OpenVR stub (build it with its build.bat)
+Extras/3DFixManagerOpenVRStub/*.dll
+Extras/3DFixManagerOpenVRStub/*.obj
+Extras/3DFixManagerOpenVRStub/*.lib
+Extras/3DFixManagerOpenVRStub/*.exp
+Extras/3DFixManagerOpenVRStub/*.log

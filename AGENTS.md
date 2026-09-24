@@ -84,9 +84,14 @@ CI workflow also put a complete Deviare set (`DeviareCOM(64).dll`, `DvAgent(64).
   the headset's. With vsync forced on, Katanga's desktop mirror window waits on the monitor, which
   held the whole VR loop at 60 fps on a 60 Hz TV. Fix: an NVIDIA program profile for
   `katanga.exe` with **Vertical sync: Off**, which overrides the global setting.
-- It starts SteamVR for that check. Katanga then opens its OpenXR session on the active runtime
-  (Virtual Desktop's VDXR here), Virtual Desktop switches away from SteamVR, and SteamVR exits.
-  If launches fail, start SteamVR before pressing Play VR.
+- That check initialises OpenVR as an overlay application (`SteamVR.Init` in
+  `OpenVRApiModule`), which starts SteamVR if it isn't running. Katanga then opens its OpenXR
+  session on the active runtime (Virtual Desktop's VDXR here), Virtual Desktop switches away from
+  SteamVR, and SteamVR hangs, restarts its processes or quits. Starting SteamVR first helps only
+  partly. **`Extras/3DFixManagerOpenVRStub/`** is an optional stand-in `openvr_api.dll` for
+  3DFixManager that answers its check without starting SteamVR (install steps and limits in its
+  README). Katanga itself can't be pointed at SteamVR's OpenXR runtime instead, because it runs
+  elevated and the OpenXR loader ignores `XR_RUNTIME_JSON` in elevated processes.
 - Most DX11 games launch as `DX11Exe`: the fix's 3Dmigoto `d3d11.dll` shares frames with Katanga
   itself ("DirectConnection"), and GamePlugin is only injected for pacing (see Frame pacing).
 
