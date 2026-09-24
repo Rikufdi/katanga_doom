@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.XR;
 
@@ -22,6 +23,14 @@ public class ScreenImage : MonoBehaviour
     // Set by LaunchAndPlay while the texture on the screen is the live game image, which
     // changes every frame.  Otherwise we only redo the copy when the texture changes.
     public static bool sourceIsLive = false;
+
+    // Set by LaunchAndPlay when the game's back buffer is an _SRGB format.  Its shared texture
+    // then samples as linear, and the snapshot turns it back into sRGB (see KatangaSnapshot).
+    public static bool sourceIsSRGBView = false;
+
+    // Dither where the image drops to the 8 bit eye buffer, see sbsShader.  --no-dither turns
+    // it off, for instance if a video encoder shows the noise.
+    public static readonly bool dither = Array.IndexOf(Environment.GetCommandLineArgs(), "--no-dither") < 0;
 
     // Supersampling of the whole VR view, 1.0 = the runtime's recommended size.
     public static float RenderScale
@@ -99,6 +108,7 @@ public class ScreenImage : MonoBehaviour
         Graphics.Blit(source, leftEye, halfScale, new Vector2(0.5f * scale.x + offset.x, offset.y));
         Graphics.Blit(source, rightEye, halfScale, new Vector2(offset.x, offset.y));
 
+        material.SetFloat("_Dither", dither ? 1.0f : 0.0f);
         material.SetTexture("_LeftTex", leftEye);
         material.SetTexture("_RightTex", rightEye);
         material.EnableKeyword("EYE_TEXTURES");
@@ -112,6 +122,7 @@ public class ScreenImage : MonoBehaviour
     }
 
     RenderTexture snapshot;
+    Material snapshotMaterial;
 
     // One draw that copies the whole source, so both eyes come from one game frame.  A blit
     // rather than CopyTexture: the shared texture is wrapped as RGBA32 whatever the game
@@ -131,7 +142,10 @@ public class ScreenImage : MonoBehaviour
             snapshot.Create();
         }
 
-        Graphics.Blit(source, snapshot);
+        if (snapshotMaterial == null)
+            snapshotMaterial = new Material(Resources.Load<Shader>("KatangaSnapshot")) { hideFlags = HideFlags.HideAndDontSave };
+        snapshotMaterial.SetFloat("_LinearToSRGB", sourceIsSRGBView ? 1.0f : 0.0f);
+        Graphics.Blit(source, snapshot, snapshotMaterial);
         return snapshot;
     }
 
@@ -141,7 +155,9 @@ public class ScreenImage : MonoBehaviour
             return;
 
         Free(ref rt);
-        rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
+        // 10 bit, like the snapshot and most games: the only drop to 8 bit is then the eye
+        // buffer itself, where sbsShader dithers.
+        rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB2101010, RenderTextureReadWrite.Linear)
         {
             name = name,
             useMipMap = true,

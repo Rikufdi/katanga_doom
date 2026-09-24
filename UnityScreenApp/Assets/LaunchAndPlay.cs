@@ -136,6 +136,10 @@ public class LaunchAndPlay : MonoBehaviour
 
         upscaler = new GameUpscaler();
 
+        // Measures what really ends up in the headset's eye buffer, see ColorDiagnostics.
+        if (ColorDiagnostics.Requested && Camera.main != null)
+            Camera.main.gameObject.AddComponent<ColorDiagnostics>();
+
         // Mipmapped per eye copies of whatever is on the screen, for clean filtering.
         if (screenRenderer.GetComponent<ScreenImage>() == null)
             screenRenderer.gameObject.AddComponent<ScreenImage>();
@@ -310,6 +314,11 @@ public class LaunchAndPlay : MonoBehaviour
             // It will always be up to date with latest game image, because we pass in 'shared'.
 
             _bothEyes = Texture2D.CreateExternalTexture(gameWidth, gameHeight, TextureFormat.RGBA32, noMipMaps, colorSpace, shared);
+
+            // The native shader view keeps the game's format, so _SRGB games sample as linear.
+            // ScreenImage's snapshot re-encodes those to sRGB for our Gamma color space pipeline.
+            ScreenImage.sourceIsSRGBView = (format == 29 || format == 91);
+            print(String.Format("Game DXGI format {0}{1}", format, ScreenImage.sourceIsSRGBView ? ", sRGB: re-encoded in the snapshot" : ""));
 
             print("..eyes width: " + _bothEyes.width + " height: " + _bothEyes.height + " format: " + _bothEyes.format);
 
