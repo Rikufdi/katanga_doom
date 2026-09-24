@@ -457,7 +457,7 @@ public class Texture : MonoBehaviour
 
     public static RayCastResult RayCastAll(Vector3 from, Vector3 dir)
     {
-        foreach (var uddTexture in GameObject.FindObjectsOfType<uDesktopDuplication.Texture>()) {
+        foreach (var uddTexture in GameObject.FindObjectsByType<uDesktopDuplication.Texture>(FindObjectsSortMode.InstanceID)) {
             var result = uddTexture.RayCast(from, dir);
             if (result.hit) return result;
         }

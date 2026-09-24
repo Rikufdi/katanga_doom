@@ -17,7 +17,7 @@ public class Manager : MonoBehaviour
     {
         if (instance_ != null) return instance_;
 
-        var manager = FindObjectOfType<Manager>();
+        var manager = FindFirstObjectByType<Manager>();
         if (manager) {
             instance_ = manager;
             return manager;

@@ -72,8 +72,8 @@ public static class KatangaXRSetup
         }
         general.InitManagerOnStart = true;
 
-        if (!general.AssignedSettings.activeLoaders.Any(l => l != null && l.GetType().FullName == OpenXRLoader))
-            XRPackageMetadataStore.AssignLoader(general.AssignedSettings, OpenXRLoader, BuildTargetGroup.Standalone);
+        if (!general.Manager.activeLoaders.Any(l => l != null && l.GetType().FullName == OpenXRLoader))
+            XRPackageMetadataStore.AssignLoader(general.Manager, OpenXRLoader, BuildTargetGroup.Standalone);
 
         OpenXRSettings openxr = OpenXRSettings.GetSettingsForBuildTargetGroup(BuildTargetGroup.Standalone);
         if (openxr != null)
