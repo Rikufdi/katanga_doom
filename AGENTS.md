@@ -204,10 +204,14 @@ roughly a third as often as at 90 Hz, because each frame gets 13.9 ms instead of
 The occasional **major slowdown** (seconds of exactly 100 ms Katanga frames, pacing drops out) is
 Virtual Desktop's runtime holding Katanga back. The headset's logcat shows the effect, not the
 cause: the decoder's input rate falls (72 → ~50/s), stale frames appear and VD's predicted latency
-jumps (59 → 82 ms). It comes and goes between sessions (two in 4 minutes, none in 8), which points
-at something external such as Wi-Fi retransmissions or an encoder stall. Catch one with Q3Diag
-running (`local/tools/pacing/q3diag_session.py`) to see the Wi-Fi and encoder numbers at that
-moment. Turning pacing off did not reduce the game's slow frames either (the driver's
+jumps (59 → 82 ms). It comes and goes between sessions (two in 4 minutes, none in 8). One was caught with Q3Diag
+running (`local/tools/pacing/q3diag_session.py`): it lined up with a **Wi-Fi error burst on the
+headset's 6 GHz link** (542 retries and 58 lost packets in one ~2 s sample, against 0-20 retries and
+0 lost normally; RSSI -35 → -39 dBm), while the PC was calm (NVENC 17-21%, GPU, DPC, game and
+streamer normal). No controller connect or disconnect coincided. The burst's trigger is outside
+Katanga: channel interference, the Quest radio (it serves the Touch controllers' 2.4 GHz Wi-Fi
+Direct link on the same chip, "RSDB"), or the signal being blocked. Katanga recovers by itself:
+pacing drops out and resumes. Turning pacing off did not reduce the game's slow frames either (the driver's
 frame queue is back then), so the remaining stutters are the game's own work and a frame queue in
 Katanga would only add latency. A lower headset refresh rate gives each game frame more time.
 Keep the options for games that load every core, and remeasure there.
