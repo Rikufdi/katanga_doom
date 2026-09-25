@@ -153,6 +153,65 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
 - `local/pacetest/` (see `local/MACHINE.md`) tests the pacing plugin without a game or headset,
   64 and 32 bit, including the 32 bit `rundll32` probe (`pacetest32.exe <GamePlugin.dll> probe`).
 
+## Colour pipeline
+
+The goal is that the headset shows the game's pixel values unchanged, with black at exactly 0 and
+every shadow step intact. PCVR is known to get this wrong (double sRGB encoding, video range,
+crushed or lifted blacks), so each layer has been measured.
+
+**Katanga's side:**
+
+- The project renders in **Gamma** colour space: shaders pass stored values through, no
+  conversions. The eye buffer from Virtual Desktop's runtime is `R8G8B8A8_UNorm`, not sRGB
+  (3072×3264 × 2 slices, single pass instanced).
+- **Game → shared texture:** 3Dmigoto or GamePlugin copies the back buffer. Most games are
+  `R8G8B8A8_UNORM` (Metro Exodus, DXGI 28) or 10 bit `R10G10B10A2` (Little Nightmares II,
+  DXGI 24), read as stored.
+- **`_SRGB` back buffers (DXGI 29/91)** sample as linear through the shared texture, which in a
+  Gamma pipeline looks too dark with crushed shadows. The snapshot shader `KatangaSnapshot`
+  (in `Resources`) encodes them back to sRGB. `Player.log` says `Game DXGI format N` and whether
+  it converts. Not yet tested with such a game (The Surge is one).
+- **Precision:** the snapshot and the per-eye copies are 10 bit (`ARGB2101010`). The only drop to
+  8 bit is the eye buffer, where `sbsShader` dithers (±1 step triangular noise, new every frame,
+  faded out at exact 0 and 1 so black stays 0). `--no-dither` turns it off.
+
+**Measured** (`--color-diagnostics`: clears the eye buffer to known levels and reads the raw bits
+back):
+
+| Written | 0.00 | 0.02 | 0.05 | 0.20 | 0.50 | 1.00 |
+|---|---|---|---|---|---|---|
+| Eye buffer (8 bit) | 0 | 5 | 13 | 51 | 127 | 255 |
+
+Exact: no double sRGB encoding (0.02 would be 39, 0.5 would be 188).
+
+**After Virtual Desktop** (`--color-levels` holds the whole view at 8 bit levels;
+`local/tools/color/capture_levels.sh` grabs the Quest's final panel buffer with `adb exec-out
+screencap`, 4128×2208, both eyes). Quest settings: VD colour saturation off, Quest brightness
+max, accessibility contrast 0. Flat fields, averaged:
+
+| Input | 0 | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 192 | 255 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| G | 0 | 2 | 4 | 8 | 14 | 24 | 43 | 76 | 140 | 201 | 254 |
+| B | 0 | 3 | 5–6 | 11 | 18–19 | 29–30 | 51 | 88–90 | 161–165 | 232–237 | 255 |
+| R | 0 | 1–2 | 3 | 7 | 12–13 | 21–22 | 39–40 | 70–72 | 130–133 | 188–193 | 236–242 |
+
+- **Black stays 0 and every step from 1 up stays distinct** through the video encode and decode:
+  no crushing, no lifted blacks, no limited range.
+- On top there is a **tone and colour curve**: shadows and mid-tones raised (about
+  output = input^0.86), blue boosted 15–25%, red lowered at white. That lowers contrast, which fits
+  "less vivid than the OLED TV, closer with added contrast". It could be the Quest 3's own panel
+  calibration (correct, and applied to everything) or something Virtual Desktop adds. The OpenXR
+  spec says a non-sRGB swap chain holds linear values, but a runtime that followed that literally
+  would show 128 as ~188, not 140, so VD doesn't do that. **Open question**: a native Quest
+  reference (the same levels shown by a Quest app, not through VD) separates the two.
+- **Backlight:** the Quest's LCD backlight adapts to the content. A capture right after a level
+  change and one a second later are identical to the decimal, yet the eye sees a short brightness
+  bump. It is outside the image data and `screencap` can't see it.
+
+**Capture traps:** the headset display is off (captures black) unless someone wears it; any
+open Quest or VD menu ends up in the capture; the panel lags the PC by up to a second, so capture
+at least 1–2 s after each level change.
+
 ## Testing and measuring
 
 - **Slideshow mode:** run `katanga.exe` with no arguments. Hold Ctrl while starting it to get a
