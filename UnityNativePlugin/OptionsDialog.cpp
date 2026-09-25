@@ -194,7 +194,7 @@ extern "C" int UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API ShowOptionsDialog(cons
 		e.check = Control(hwnd, L"BUTTON", e.title, BS_AUTOCHECKBOX | WS_TABSTOP, margin, y, checkWidth, line + 4, id++, gBold);
 		SendMessageW(e.check, BM_SETCHECK, e.checked ? BST_CHECKED : BST_UNCHECKED, 0);
 		if (!e.value.empty())
-			e.edit = Control(hwnd, L"EDIT", e.value, ES_NUMBER | ES_CENTER | WS_TABSTOP, margin + checkWidth + tm.tmAveCharWidth, y,
+			e.edit = Control(hwnd, L"EDIT", e.value, ES_CENTER | WS_TABSTOP, margin + checkWidth + tm.tmAveCharWidth, y,
 				editWidth, line + 4, id++, gFont, WS_EX_CLIENTEDGE);
 		y += line + 4;
 

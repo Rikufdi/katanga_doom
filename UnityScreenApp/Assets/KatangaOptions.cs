@@ -26,6 +26,9 @@ public static class KatangaOptions
         public string Help;
         public string DefaultValue;  // numeric value after the flag, or null for none
         public string ValueLabel;    // shown before the value field
+        public bool WholeNumber;     // the value must be a whole number of at least 1
+        public string OffValue;      // for options that are on by default: unchecked writes the
+                                     // flag with this value instead of leaving it out
     }
 
     static readonly Option[] options =
@@ -57,6 +60,13 @@ public static class KatangaOptions
                  + "keeps white at the same tint as the greys, about 9% less bright at the very top. Only with the "
                  + "colour correction." },
         new Option {
+            Flag = "--screen-sharpen", DefaultValue = "0.5", OffValue = "0", ValueLabel = "strength:",
+            Title = "Screen sharpening",
+            Help = "Sharpens the game image at the size the screen is shown at, so it looks crisp without the "
+                 + "crunchy, shimmering edges of sharpening the whole view (PRISM, one of the sharpening modes on "
+                 + "the controller; leave that on RCAS or off). 0.5 is a good start; from about 0.6 the smallest "
+                 + "text starts to break up." },
+        new Option {
             Flag = "--no-dither", Inverted = true,
             Title = "Dithering",
             Help = "Adds fine noise, invisible at headset frame rates, where the image goes to 8 bits per colour. "
@@ -71,7 +81,7 @@ public static class KatangaOptions
 
         new Option {
             Section = "CPU (experimental, no measured benefit so far)", Flag = "--cpu-isolation", DefaultValue = "1",
-            Title = "Separate CPU cores for Katanga", ValueLabel = "cores:",
+            Title = "Separate CPU cores for Katanga", ValueLabel = "cores:", WholeNumber = true,
             Help = "Keeps Katanga, including Virtual Desktop's busy frame timing thread, on the last physical cores "
                  + "(the number) and the game on all the others. May help games that load every core." },
         new Option {
@@ -125,13 +135,20 @@ public static class KatangaOptions
             if (at >= 0)
             {
                 used[at] = true;
-                if (o.DefaultValue != null && at + 1 < tokens.Count && Int32.TryParse(tokens[at + 1], out _))
+                if (o.DefaultValue != null && at + 1 < tokens.Count && ParseNumber(tokens[at + 1], out _))
                 {
                     value = tokens[at + 1];
                     used[at + 1] = true;
                 }
             }
             bool on = (at >= 0) != o.Inverted;
+            if (o.OffValue != null)
+            {
+                // On unless the file sets the off value; then show the default for turning it back on.
+                on = !(at >= 0 && SameNumber(value, o.OffValue));
+                if (!on)
+                    value = o.DefaultValue;
+            }
             if (o.Section != null)
                 spec.Append("#\t").Append(o.Section).Append('\n');
             spec.Append("o\t").Append(o.Title + (o.ValueLabel != null ? ", " + o.ValueLabel : "")).Append('\t').Append(o.Help).Append('\t')
@@ -167,11 +184,23 @@ public static class KatangaOptions
             Option o = options[i];
             string[] f = lines[i].Split('\t');
             bool on = f[0] == "1";
-            string value = f.Length > 1 && Int32.TryParse(f[1], out int n) && n > 0 ? n.ToString() : o.DefaultValue;
+            string value = o.DefaultValue;
+            if (f.Length > 1 && ParseNumber(f[1], out float number) && number >= 0 &&
+                (!o.WholeNumber || (number >= 1 && number == Mathf.Floor(number))))
+                value = number.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
             file.AppendLine();
             foreach (string help in Wrap(o.Title + ". " + o.Help, 95))
                 file.AppendLine("# " + help);
+            if (o.OffValue != null)
+            {
+                // On by default: active only when it differs from the default.
+                if (!on)
+                    file.AppendLine(o.Flag + " " + o.OffValue);
+                else
+                    file.AppendLine((SameNumber(value, o.DefaultValue) ? "#" : "") + o.Flag + " " + value);
+                continue;
+            }
             string line = o.Flag + (o.DefaultValue != null ? " " + value : "");
             bool active = on != o.Inverted;
             file.AppendLine(active ? line : "#" + line);
@@ -186,6 +215,18 @@ public static class KatangaOptions
         File.WriteAllText(path, file.ToString());
         KatangaArgs.Reload();
         Debug.Log("Options window: saved " + path);
+    }
+
+    // Values like 0.5; a decimal comma is accepted too.
+    static bool ParseNumber(string text, out float value)
+    {
+        return float.TryParse(text.Replace(',', '.'), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    static bool SameNumber(string a, string b)
+    {
+        return ParseNumber(a, out float x) && ParseNumber(b, out float y) && Mathf.Approximately(x, y);
     }
 
     static List<string> ReadTokens(string path)

@@ -266,9 +266,14 @@ viewer, the chart's 3840 px per eye squeezed ~2.4x onto the 2064 px panel.
 - Dithering costs no measurable sharpness, and Virtual Desktop's encoder keeps flat areas within
   ~0.5 levels (no blocking) at Godlike.
 - Render scale 1.3 is softer, not sharper.
-- Mip bias (`--mip-bias`, test option): −0.5 (default) is the sharpest and still shows 2 px lines
-  on the panel; 0 is slightly softer with less high frequency energy (less shimmer); +0.5 soft;
-  +1.0 blurry. The default stays.
+- Mip bias (`--mip-bias`, test option): −0.5 is the sharpest and still shows 2 px lines on the
+  panel; 0 is slightly softer with less high frequency energy (less shimmer); +0.5 soft; +1.0
+  blurry. In the headset 0 looked better than −0.5.
+- **Screen sharpening** (`--screen-sharpen`, in the options window): an unsharp mask in `sbsShader`
+  against the same spot one mip level coarser, so it only sharpens detail the screen size can
+  carry. Chosen in the headset: **mip bias 0 + screen sharpening 0.5** (the new defaults; 0.6 started
+  to break up the smallest text). With it the controller's sharpening mode belongs on RCAS or off,
+  not PRISM.
 - The two eyes are cut from the side-by-side image exactly; no misalignment.
 
 ## Testing and measuring

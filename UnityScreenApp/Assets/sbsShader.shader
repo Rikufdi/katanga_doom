@@ -52,6 +52,7 @@ Shader "Unlit/sbsShader"
 			sampler2D _LeftTex;
 			sampler2D _RightTex;
 			float _Dither;	// dithering to the 8 bit eye buffer, see KatangaColor.cginc
+			float _ScreenSharpen;	// mip based unsharp mask strength, set by ScreenImage.cs
 
 			v2f vert (appdata v)
 			{
@@ -118,6 +119,17 @@ Shader "Unlit/sbsShader"
 				float2 dy = ddy(i.uv);
 				float4 col = unity_StereoEyeIndex == 0 ? tex2Dgrad(_LeftTex, i.uv, dx, dy)
 				                                       : tex2Dgrad(_RightTex, i.uv, dx, dy);
+				// Sharpening at the scale the screen is shown at: the same spot one mip level
+				// coarser (doubled gradients) is the local blur, and the difference to it is the
+				// finest detail this screen size can carry.  Adding some of it back sharpens
+				// without bringing back detail the panel can't show, unlike sharpening the whole
+				// finished view (PRISM).
+				if (_ScreenSharpen > 0.0)
+				{
+					float4 blur = unity_StereoEyeIndex == 0 ? tex2Dgrad(_LeftTex, i.uv, dx * 2.0, dy * 2.0)
+					                                        : tex2Dgrad(_RightTex, i.uv, dx * 2.0, dy * 2.0);
+					col.rgb = saturate(col.rgb + _ScreenSharpen * (col.rgb - blur.rgb));
+				}
 				return KatangaOutput(col, i.vertex, _Dither);
 			#else
 				// sample the texture

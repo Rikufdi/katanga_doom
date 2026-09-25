@@ -39,19 +39,24 @@ public class ScreenImage : MonoBehaviour
         set { PlayerPrefs.SetFloat("render-scale", value); }
     }
 
-    // Slightly sharper than plain trilinear, which reads soft for text in VR.
-    // --mip-bias overrides it, for measuring sharpness against aliasing.
-    static readonly float mipBias = MipBiasOption(-0.5f);
+    // Plain trilinear, sharpened by screenSharpen below.  Measured on a Quest 3 (AGENTS.md,
+    // Sharpness): -0.5 is a little sharper but keeps detail the panel can't show, which shimmers;
+    // bias 0 with the screen sharpening at 0.5 looked best in the headset.  --mip-bias overrides it.
+    static readonly float mipBias = FloatOption("--mip-bias", 0.0f);
 
-    static float MipBiasOption(float fallback)
+    // Unsharp mask in sbsShader at the scale the screen is shown at.  --screen-sharpen, 0 is off;
+    // from about 0.6 the smallest text starts to break up.
+    static readonly float screenSharpen = FloatOption("--screen-sharpen", 0.5f);
+
+    static float FloatOption(string name, float fallback)
     {
         string[] args = KatangaArgs.All;
-        int at = Array.IndexOf(args, "--mip-bias");
+        int at = Array.IndexOf(args, name);
         if (at >= 0 && at + 1 < args.Length &&
-            float.TryParse(args[at + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float bias))
+            float.TryParse(args[at + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float value))
         {
-            print("--mip-bias: " + bias);
-            return bias;
+            print(name + ": " + value);
+            return value;
         }
         return fallback;
     }
@@ -125,6 +130,7 @@ public class ScreenImage : MonoBehaviour
         Graphics.Blit(source, rightEye, halfScale, new Vector2(offset.x, offset.y));
 
         material.SetFloat("_Dither", dither ? 1.0f : 0.0f);
+        material.SetFloat("_ScreenSharpen", screenSharpen);
         material.SetTexture("_LeftTex", leftEye);
         material.SetTexture("_RightTex", rightEye);
         material.EnableKeyword("EYE_TEXTURES");
