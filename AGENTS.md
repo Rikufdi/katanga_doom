@@ -99,6 +99,13 @@ CI workflow also put a complete Deviare set (`DeviareCOM(64).dll`, `DvAgent(64).
   elevated and the OpenXR loader ignores `XR_RUNTIME_JSON` in elevated processes.
 - Most DX11 games launch as `DX11Exe`: the fix's 3Dmigoto `d3d11.dll` shares frames with Katanga
   itself ("DirectConnection"), and GamePlugin is only injected for pacing (see Frame pacing).
+- DX9 games fixed with **dgVoodoo + 3Dmigoto** (dgVoodoo's `D3D9.dll` turns DX9 into DX11, 3Dmigoto's
+  `d3d11.dll`/`nvapi.dll` do the stereo) look like DX11 games to Katanga and take the same path.
+  Tested with Castlevania: Lords of Shadow (32 bit Unreal 3, launch type Steam): the 32 bit probe,
+  pacing, GPU wait (~1 ms), frame counter and colour correction all work, and it played "pretty much
+  perfect". Its remaining misses (a few per 5 s) are the game's CPU side, not the GPU. Katanga's own
+  DX9 path (`InProc_DX9.cpp`, classic HelixMod fixes) has pacing but not yet the GPU wait or the
+  frame counter, and is untested with this build.
 
 ## Frame pacing (frame sync)
 
