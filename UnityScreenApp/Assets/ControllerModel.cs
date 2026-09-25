@@ -41,10 +41,17 @@ public class ControllerModel : MonoBehaviour
         {
             currentDevice = device;
             deviceProfile = device != null ? ProfileFor(device) : null;
+            print(string.Format("[{0:HH:mm:ss.fff}] Controller {1} {2}", System.DateTime.Now,
+                isLeft ? "left" : "right", device != null ? "connected" : "disconnected"));
         }
 
+        // Keep the model while a controller is away.  Quest controllers sleep when put down
+        // (playing with a gamepad) and reconnect often, sometimes flapping several times in a
+        // row; rebuilding the glTF model on every reconnect was right next to the long
+        // stutters.  It is hidden below while untracked, and only replaced when a different
+        // kind of controller shows up.
         string profile = deviceProfile;
-        if (profile != currentProfile)
+        if (profile != null && profile != currentProfile)
         {
             currentProfile = profile;
             LoadModel(profile);
@@ -142,7 +149,7 @@ public class ControllerModel : MonoBehaviour
             r.receiveShadows = false;
         }
 
-        print("Controller model " + (isLeft ? "left: " : "right: ") + profile);
+        print(string.Format("[{0:HH:mm:ss.fff}] Controller model {1}: {2}", System.DateTime.Now, isLeft ? "left" : "right", profile));
     }
 
     // Some controllers (Vive wand) have one model for both hands.
