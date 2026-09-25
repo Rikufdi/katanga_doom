@@ -40,7 +40,21 @@ public class ScreenImage : MonoBehaviour
     }
 
     // Slightly sharper than plain trilinear, which reads soft for text in VR.
-    const float mipBias = -0.5f;
+    // --mip-bias overrides it, for measuring sharpness against aliasing.
+    static readonly float mipBias = MipBiasOption(-0.5f);
+
+    static float MipBiasOption(float fallback)
+    {
+        string[] args = KatangaArgs.All;
+        int at = Array.IndexOf(args, "--mip-bias");
+        if (at >= 0 && at + 1 < args.Length &&
+            float.TryParse(args[at + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float bias))
+        {
+            print("--mip-bias: " + bias);
+            return bias;
+        }
+        return fallback;
+    }
 
     Renderer screen;
     RenderTexture leftEye;

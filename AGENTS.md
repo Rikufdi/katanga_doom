@@ -252,6 +252,25 @@ max, accessibility contrast 0. Flat fields, averaged:
 open Quest or VD menu ends up in the capture; the panel lags the PC by up to a second, so capture
 at least 1–2 s after each level change.
 
+## Sharpness
+
+Measured with a test chart (`local/tools/sharpness/make_chart.py`: 1 and 2 px lines, text, star,
+flat grey) shown by the slideshow, which uses the same image path as games, and the Quest's panel
+buffer captured per variant (`local/tools/sharpness/run_variants.sh`, `analyse.py` finds the chart
+regions with ORB + homography and measures in the capture's own pixels). Big screen close to the
+viewer, the chart's 3840 px per eye squeezed ~2.4x onto the 2064 px panel.
+
+- Sharpening off and RCAS (the default) look the same: RCAS works on the game image before it is
+  scaled down. **PRISM** (sharpens the finished VR view) gives ~40% harder edges and ~50% more frame
+  to frame flicker: the crunchy, "pixelated" look. Not recommended at this screen size.
+- Dithering costs no measurable sharpness, and Virtual Desktop's encoder keeps flat areas within
+  ~0.5 levels (no blocking) at Godlike.
+- Render scale 1.3 is softer, not sharper.
+- Mip bias (`--mip-bias`, test option): −0.5 (default) is the sharpest and still shows 2 px lines
+  on the panel; 0 is slightly softer with less high frequency energy (less shimmer); +0.5 soft;
+  +1.0 blurry. The default stays.
+- The two eyes are cut from the side-by-side image exactly; no misalignment.
+
 ## Testing and measuring
 
 - **Slideshow mode:** run `katanga.exe` with no arguments. Hold Ctrl while starting it to get a
