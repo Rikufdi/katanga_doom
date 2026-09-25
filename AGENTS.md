@@ -128,6 +128,13 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
   counts the frame and only then waits for the VR frame. `katanga.log` says `game frames finish
   on the GPU before the VR frame wait (fence)`. In PresentMon the game's `MsRenderPresentLatency`
   fell from ~1.6 ms to ~0.2 ms.
+- **The GPU wait comes out of the game's frame slot.** `katanga.log` reports it every 900 frames
+  (`GPU wait over the last 900 frames: avg ...`). Metro Exodus on the 5090 barely notices;
+  Little Nightmares II waited ~6.5 ms of its 13.9 ms slot (72 Hz) and missed its slot often in a
+  heavy section. `--no-gpu-wait` (flush only) made the frame counter look clean, but in the headset
+  it looked just as bad: the race is back, and the counter can't see it in that mode. So the wait
+  stays the default. A game that misses its slot this way needs lower settings (less GPU work per
+  frame) or a lower headset refresh rate.
 - For `DX11Exe` (3Dmigoto) games Katanga injects GamePlugin in **pacing only mode**: it loads it
   with `LoadCustomDll` (not unloaded on exit, so the hook never points at freed code) and calls the
   exported `StartPacing` through `CallCustomApi`, because `OnLoad` only runs for DLLs attached to a
