@@ -131,7 +131,13 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
   finds `Present` in that clean 32 bit process and fills in the mapping.
 - Proof in `katanga.log`: `pacing hook on IDXGISwapChain::Present installed`, `first paced
   Present`, and every 900 presents `N of the last 900 held for the VR frame`. `Player.log` says
-  `Frame sync: pacing active` or why not.
+  `Frame sync: pacing active` or why not. The hook also logs each distinct
+  `Present(SyncInterval, Flags)` combination and each swap chain once.
+- **`Present` with `DXGI_PRESENT_TEST` (Flags 0x1) is not paced.** It only asks whether the window
+  is visible and shows nothing, and Windows doesn't log it as a frame (PresentMon doesn't see it).
+  Metro Exodus calls it once per real frame; pacing it too ran Metro at half the headset rate
+  (36 fps at 72 Hz). A game paced at an exact fraction of the headset rate while it needs far
+  less time per frame means more than one paced `Present` per frame: check those log lines.
 - Requirements: the `katanga.exe` vsync-off profile above (Katanga sets it), and the 3DFM limiter
   at unlimited.
 - `local/pacetest/` (see `local/MACHINE.md`) tests the pacing plugin without a game or headset,
