@@ -78,6 +78,13 @@ public static class KatangaOptions
             Help = "3DFixManager turns vertical sync on for every program, which holds Katanga to your monitor's "
                  + "refresh rate (60 fps on a 60 Hz TV) instead of the headset's. Katanga gives katanga.exe an "
                  + "NVIDIA profile with vertical sync off. Takes effect from the next start." },
+        new Option {
+            Flag = "--no-game-vsync-off", Inverted = true,
+            Title = "Vertical sync off for the game while it runs in VR",
+            Help = "In exclusive fullscreen, 3DFixManager's forced vertical sync holds the game to your monitor "
+                 + "(60 fps on a 60 Hz TV against the headset's 72 or 90 Hz: steady judder). Katanga turns it off in "
+                 + "the game's NVIDIA profile just for the launch and puts the profile back seconds later, so the "
+                 + "game on your TV is unchanged. If Katanga crashes before that, its next start puts it back." },
 
         new Option {
             Section = "CPU (experimental, no measured benefit so far)", Flag = "--cpu-isolation", DefaultValue = "1",

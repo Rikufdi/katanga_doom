@@ -454,6 +454,9 @@ public class Game : MonoBehaviour
 
             print("Launch type: " + launchType + " for Game: " + gameExe);
 
+            // Before the game starts, so the driver reads it.  Put back once the game runs.
+            GameVsync.Apply(gameExe);
+
             // We finally answered the question for whether we want a startup delay or
             // not, and the answer is yes.  Battlefield3 in particular has a retarded
             // browser based launcher, which runs after we launch bf3.exe.  If we 

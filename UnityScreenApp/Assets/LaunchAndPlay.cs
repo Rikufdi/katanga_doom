@@ -56,6 +56,7 @@ public class LaunchAndPlay : MonoBehaviour
     // Present.  That locks the game to the headset's clock.  --no-frame-sync turns it off.
     public static bool frameSync = true;
     private static bool frameEventCreated = false;
+    private bool gameVsyncRestoreStarted = false;
 
     [DllImport("UnityNativePlugin64")]
     [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
@@ -84,6 +85,7 @@ public class LaunchAndPlay : MonoBehaviour
         CreateSetupMutex();
 
         EnsureDriverProfile();
+        GameVsync.RecoverFromCrash();
     }
 
     // Katanga's desktop mirror window must never wait for vsync: with vsync forced on (as
@@ -258,6 +260,13 @@ public class LaunchAndPlay : MonoBehaviour
 
             print("-> Got shared handle: " + gGameSharedHandle.ToString("x"));
 
+            // The game is running and showing frames: its NVIDIA profile can go back.
+            if (!gameVsyncRestoreStarted)
+            {
+                gameVsyncRestoreStarted = true;
+                StartCoroutine(GameVsync.RestoreSoon());
+            }
+
 
             // Call into the x64 UnityNativePlugin DLL for DX11 access, in order to create a ID3D11ShaderResourceView.
             // You'd expect this to be a ID3D11Texture2D, but that's not what Unity wants.
@@ -411,6 +420,7 @@ public class LaunchAndPlay : MonoBehaviour
         // On game exit, we want to switch to DesktopDuplication view, rather than exit.
         if (game.Exited())
         {
+            GameVsync.RestoreIfChanged("the game exited");
             debugprint("Showing desktop view.");
             uDesktopDuplication.Texture script = screenRenderer.GetComponent<uDesktopDuplication.Texture>();
             screenRenderer.material.shader = shader2D;  // Switch shader to 2D version.
@@ -494,6 +504,7 @@ public class LaunchAndPlay : MonoBehaviour
     private void OnApplicationQuit()
     {
         print("OnApplicationQuit");
+        GameVsync.RestoreIfChanged("Katanga quit");
 
         if (upscaler != null)
             upscaler.Release();
