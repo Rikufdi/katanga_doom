@@ -30,7 +30,7 @@ public class ScreenImage : MonoBehaviour
 
     // Dither where the image drops to the 8 bit eye buffer, see sbsShader.  --no-dither turns
     // it off, for instance if a video encoder shows the noise.
-    public static readonly bool dither = Array.IndexOf(Environment.GetCommandLineArgs(), "--no-dither") < 0;
+    public static readonly bool dither = !KatangaArgs.Has("--no-dither");
 
     // Supersampling of the whole VR view, 1.0 = the runtime's recommended size.
     public static float RenderScale

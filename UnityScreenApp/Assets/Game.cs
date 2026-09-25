@@ -42,6 +42,10 @@ public class Game : MonoBehaviour
     // Only set if we find --slideshow-mode on the command line.
     public static bool slideshowMode = false;
 
+    // CPU headroom for the game, both off by default.  See ApplyCpuTuning.
+    public static int cpuIsolationCores = 0;     // --cpu-isolation [cores]
+    public static bool raiseGamePriority = false; // --game-priority
+
     // Only set if we have no input params, to show desktop duplication.
     bool desktopMode = false;
 
@@ -144,6 +148,22 @@ public class Game : MonoBehaviour
             {
                 LaunchAndPlay.frameSync = false;
                 print("--no-frame-sync");
+            }
+            else if (args[i] == "--cpu-isolation")
+            {
+                // Optional count of physical cores for Katanga, default 1.
+                cpuIsolationCores = 1;
+                if (i + 1 < args.Length && Int32.TryParse(args[i + 1], out int cores))
+                {
+                    cpuIsolationCores = cores;
+                    i++;
+                }
+                print("--cpu-isolation: " + cpuIsolationCores);
+            }
+            else if (args[i] == "--game-priority")
+            {
+                raiseGamePriority = true;
+                print("--game-priority");
             }
             else if (args[i] == "--game-path")
             {
@@ -496,6 +516,8 @@ public class Game : MonoBehaviour
         // it as valid.  We can't do this earlier, because it could race condition into
         // a process that was not setup.
 
+        ApplyCpuTuning(gameProcess);
+
         _gameProcess = gameProcess;
 
         yield return null;
@@ -530,6 +552,36 @@ public class Game : MonoBehaviour
         }
 
         print(String.Format("Successfully loaded {0}", _nativeDLLName));
+    }
+
+
+    // Give the game as much CPU as possible.  Katanga needs little, but Virtual Desktop's OpenXR
+    // runtime spins a full core inside our process for exact frame timing.  --cpu-isolation
+    // keeps all of Katanga on the last physical core(s) and the game on all the others;
+    // --game-priority puts the game above normal so background programs yield to it.
+
+    [DllImport("UnityNativePlugin64")]
+    private static extern ulong ApplyCpuIsolation(int reserveCores, uint gamePid, out ulong gameMask);
+    [DllImport("UnityNativePlugin64")]
+    [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
+    private static extern bool RaiseGamePriority(uint gamePid);
+
+    private void ApplyCpuTuning(NktProcess gameProc)
+    {
+        if (gameProc == null)
+            return;
+
+        if (cpuIsolationCores > 0)
+        {
+            ulong katangaMask = ApplyCpuIsolation(cpuIsolationCores, (uint)gameProc.Id, out ulong gameMask);
+            if (katangaMask != 0)
+                print(String.Format("CPU isolation: Katanga on logical CPUs 0x{0:X}, game on 0x{1:X}", katangaMask, gameMask));
+            else
+                print("CPU isolation: not applied (too few cores, or no access to the game process)");
+        }
+
+        if (raiseGamePriority)
+            print("Game priority: " + (RaiseGamePriority((uint)gameProc.Id) ? "above normal" : "could not be raised"));
     }
 
 

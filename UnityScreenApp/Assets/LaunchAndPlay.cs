@@ -96,7 +96,7 @@ public class LaunchAndPlay : MonoBehaviour
 
     private void EnsureDriverProfile()
     {
-        if (Array.IndexOf(Environment.GetCommandLineArgs(), "--no-vsync-profile") >= 0)
+        if (KatangaArgs.Has("--no-vsync-profile"))
         {
             print("NVIDIA profile: skipped (--no-vsync-profile)");
             return;
@@ -128,7 +128,7 @@ public class LaunchAndPlay : MonoBehaviour
     void Start()
     {
         print("Start: Command line arguments: " + System.Environment.CommandLine);
-        string[] args = System.Environment.GetCommandLineArgs();
+        string[] args = KatangaArgs.All;   // command line + katanga_options.txt
 
         // Store the current Texture2D on the Quad as the original grey. We use this
         // as the default when images stop arriving, or we lose the original.

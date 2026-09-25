@@ -21,7 +21,7 @@ public class ColorDiagnostics : MonoBehaviour
 {
     public static bool Requested
     {
-        get { return Array.IndexOf(Environment.GetCommandLineArgs(), "--color-diagnostics") >= 0; }
+        get { return KatangaArgs.Has("--color-diagnostics"); }
     }
 
     static readonly float[] levels = { 0.5f, 0.2f, 0.05f, 0.02f, 0.0f, 1.0f };
@@ -83,7 +83,7 @@ public class ColorDiagnostics : MonoBehaviour
 
         // --color-levels: hold the whole view at exact 8 bit levels, 4 s each, so what the headset
         // really displays can be captured (adb screencap) and compared against the input.
-        if (Array.IndexOf(Environment.GetCommandLineArgs(), "--color-levels") >= 0)
+        if (KatangaArgs.Has("--color-levels"))
         {
             int[] steps = { 0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 48, 64, 128, 192, 255 };
             foreach (int step in steps)
