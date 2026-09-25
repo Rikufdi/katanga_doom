@@ -162,8 +162,9 @@ crushed or lifted blacks), so each layer has been measured.
 **Katanga's side:**
 
 - The project renders in **Gamma** colour space: shaders pass stored values through, no
-  conversions. The eye buffer from Virtual Desktop's runtime is `R8G8B8A8_UNorm`, not sRGB
-  (3072×3264 × 2 slices, single pass instanced).
+  conversions. Unity picks an `R8G8B8A8_UNORM_SRGB` swap chain (`Player.log`, OpenXR report,
+  `[c:...]`) and renders into it through a non-sRGB view (`R8G8B8A8_UNorm`, 3072×3264 × 2 slices,
+  single pass instanced): the stored values are sRGB values, in a buffer marked sRGB.
 - **Game → shared texture:** 3Dmigoto or GamePlugin copies the back buffer. Most games are
   `R8G8B8A8_UNORM` (Metro Exodus, DXGI 28) or 10 bit `R10G10B10A2` (Little Nightmares II,
   DXGI 24), read as stored.
@@ -172,7 +173,7 @@ crushed or lifted blacks), so each layer has been measured.
   (in `Resources`) encodes them back to sRGB. `Player.log` says `Game DXGI format N` and whether
   it converts. Not yet tested with such a game (The Surge is one).
 - **Precision:** the snapshot and the per-eye copies are 10 bit (`ARGB2101010`). The only drop to
-  8 bit is the eye buffer, where `sbsShader` dithers (±1 step triangular noise, new every frame,
+  8 bit is the eye buffer, where `KatangaColor.cginc` dithers (±1 step triangular noise, new every frame,
   faded out at exact 0 and 1 so black stays 0). `--no-dither` turns it off.
 
 **Measured** (`--color-diagnostics`: clears the eye buffer to known levels and reads the raw bits
@@ -199,11 +200,36 @@ max, accessibility contrast 0. Flat fields, averaged:
   no crushing, no lifted blacks, no limited range.
 - On top there is a **tone and colour curve**: shadows and mid-tones raised (about
   output = input^0.86), blue boosted 15–25%, red lowered at white. That lowers contrast, which fits
-  "less vivid than the OLED TV, closer with added contrast". It could be the Quest 3's own panel
-  calibration (correct, and applied to everything) or something Virtual Desktop adds. The OpenXR
-  spec says a non-sRGB swap chain holds linear values, but a runtime that followed that literally
-  would show 128 as ~188, not 140, so VD doesn't do that. **Open question**: a native Quest
-  reference (the same levels shown by a Quest app, not through VD) separates the two.
+  "less vivid than the OLED TV, closer with added contrast".
+- **It is Virtual Desktop's OpenXR path, not the Quest.** A reference image
+  (`local/tools/color/make_reference.py`: flat patches 0–255) was captured on four paths:
+
+  | Path | Tone curve | Blue/green at mid-grey |
+  |---|---|---|
+  | Quest Browser and Files viewer (native Quest apps) | exact (exponent 1.00–1.01) | 1.09 |
+  | Virtual Desktop desktop view (PC monitor) | exact | 1.17 |
+  | Katanga through VDXR (`--show-desktop` on the same PC image, or `--color-levels`) | lifted (16→23, 64→74, 128→137) | 1.16 |
+  | Same, Katanga built in Linear colour space | lifted, the same | — |
+
+  The Quest's own calibration makes greys ~10% bluer, and every native app gets that. The lift
+  only happens on VD's OpenXR path, whatever Katanga does (colour space, clear colour or textured
+  screen). VD's streaming gamma slider (0.6–1.4) has no visible effect on OpenXR apps.
+  On that path **blue reaches 255 from input ~216**, so from there up only red and green rise, and
+  white loses the bluish tint of the greys: that is the "yellow white".
+- **Correction** (`ColorCorrection.cs`, applied in `KatangaColor.cginc` by `sbsShader` and
+  `shader2D`, before the dither): a 256 entry per-channel lookup that makes the VDXR path deliver
+  what a native Quest app shows. It holds the measured tables. Above input 192 it keeps the greys'
+  channel ratios and rolls red and green down instead, so white keeps the same tint, ~9% dimmer
+  (G 232 instead of 253). On automatically for runtime `VirtualDesktopXR` (measured with 1.0.10);
+  `Player.log` says `Color correction: on ...`. `--no-color-correction` turns it off,
+  `--no-white-fix` keeps the plain native target at the top. Verified: 8→7.4, 32→30.5, 64→62.7,
+  128→127.8, 192→190.5 (native 7.5, 31.1, 63.1, 126.7, 189.8), blue/green 1.09–1.10 from 64 to
+  white. A VD update, or another runtime, needs a new measurement.
+- **Measuring through a Quest app:** push the image (`adb push ... /sdcard/Download/`), open it in
+  Files, or serve it on `127.0.0.1` and `adb reverse tcp:8765 tcp:8765` for the Browser; then
+  `local/tools/color/capture_reference.sh`. Turn the Quest's accessibility contrast off first: it
+  crushes 1–16 to black. For the VDXR path, show the same page full screen on the PC and run
+  `katanga.exe --show-desktop` (with `--no-color-correction` for the raw curve).
 - **Backlight:** the Quest's LCD backlight adapts to the content. A capture right after a level
   change and one a second later are identical to the decimal, yet the eye sees a short brightness
   bump. It is outside the image data and `screencap` can't see it.
@@ -309,6 +335,11 @@ Keep the options for games that load every core, and remeasure there.
 - With frame sync, a game frame that doesn't finish within the headset frame (heavy scenes, the
   game's own save or loading stalls) is shown one frame late: a small drop, no judder. Lower game
   settings or a lower headset refresh rate give it more room.
+- Desktop mode (`--show-desktop`, also shown after a game exits) is much less sharp than Virtual
+  Desktop's own desktop view. `shader2D` samples the full size desktop with a 4 tap average, without
+  the mips and anisotropic filtering `ScreenImage` gives games, and everything Katanga shows is
+  also resampled into the eye buffer, video compressed and reprojected, where VD draws its desktop
+  on the Quest directly.
 - VRAM: Katanga falls to about 4–6 fps when VRAM is nearly full, for example with a local AI
   model server loaded. Check `nvidia-smi` and per-process GPU memory before profiling.
 

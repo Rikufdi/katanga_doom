@@ -28,7 +28,8 @@ Shader "Unlit/sbsShader"
 			#pragma fragment frag
 			#pragma target 4.0
 			
-			#include "UnityCG.cginc" 
+			#include "UnityCG.cginc"
+			#include "KatangaColor.cginc"
 
 			// Instancing/stereo macros are required for Single Pass Instanced XR rendering,
 			// where both eyes are drawn in one instanced draw call.
@@ -50,34 +51,7 @@ Shader "Unlit/sbsShader"
 			float4 _MainTex_ST;
 			sampler2D _LeftTex;
 			sampler2D _RightTex;
-			float _Dither;
-
-			// The eye buffer is 8 bit, and the game image is often 10 bit.  Quantizing smooth dark
-			// gradients to 8 bit makes visible bands, so add triangular noise of +-1 step first.
-			// It changes every frame, which at 90 Hz averages into a smooth gradient rather than
-			// a fixed grain.  Integer hash, so it is stable across GPUs.
-			float Rand(uint2 p, uint seed)
-			{
-				uint h = p.x * 1973u + p.y * 9277u + seed * 26699u;
-				h = (h ^ 61u) ^ (h >> 16);
-				h *= 9u;
-				h ^= h >> 4;
-				h *= 0x27d4eb2du;
-				h ^= h >> 15;
-				return h * (1.0 / 4294967296.0);
-			}
-
-			float4 Dither(float4 col, float4 screenPos)
-			{
-				uint2 p = uint2(screenPos.xy);
-				uint frame = (uint)(_Time.y * 90.0) + unity_StereoEyeIndex * 7919u;
-				float noise = Rand(p, frame) + Rand(p, frame + 104729u) - 1.0;
-				// No dither on exact black or white, so true black stays exactly 0 and never
-				// flickers up to 1.  It fades in over the first 8 bit step.
-				float3 amount = saturate(col.rgb * 255.0) * saturate((1.0 - col.rgb) * 255.0);
-				col.rgb += _Dither * amount * noise / 255.0;
-				return col;
-			}
+			float _Dither;	// dithering to the 8 bit eye buffer, see KatangaColor.cginc
 
 			v2f vert (appdata v)
 			{
@@ -144,11 +118,11 @@ Shader "Unlit/sbsShader"
 				float2 dy = ddy(i.uv);
 				float4 col = unity_StereoEyeIndex == 0 ? tex2Dgrad(_LeftTex, i.uv, dx, dy)
 				                                       : tex2Dgrad(_RightTex, i.uv, dx, dy);
-				return Dither(col, i.vertex);
+				return KatangaOutput(col, i.vertex, _Dither);
 			#else
 				// sample the texture
 				float4 col = tex2Dmultisample(_MainTex, i.uv);
-				return Dither(col, i.vertex);
+				return KatangaOutput(col, i.vertex, _Dither);
 			#endif
 			}
 			ENDCG

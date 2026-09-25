@@ -103,5 +103,6 @@ public static class XRRig
 
         Debug.Log("XR loader: " + settings.Manager.activeLoader.name);
         Debug.Log("OpenXR runtime: " + UnityEngine.XR.OpenXR.OpenXRRuntime.name + " " + UnityEngine.XR.OpenXR.OpenXRRuntime.version);
+        ColorCorrection.Setup(UnityEngine.XR.OpenXR.OpenXRRuntime.name);
     }
 }

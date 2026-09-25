@@ -30,8 +30,10 @@ Shader "Unlit/shader2D"
 			CGPROGRAM
 			#pragma vertex vert
 			#pragma fragment frag
-			
-			#include "UnityCG.cginc" 
+			#pragma target 4.0
+
+			#include "UnityCG.cginc"
+			#include "KatangaColor.cginc"
 
 			// Instancing/stereo macros are required for Single Pass Instanced XR rendering,
 			// where both eyes are drawn in one instanced draw call.
@@ -82,12 +84,13 @@ Shader "Unlit/shader2D"
 				return (sample0 + sample1 + sample2 + sample3) * 0.25;
 			}
 
-			fixed4 frag (v2f i) : SV_Target
+			float4 frag (v2f i) : SV_Target
 			{
 				UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 				// sample the texture
-				fixed4 col = tex2Dmultisample(_MainTex, i.uv);
-				return col;
+				float4 col = tex2Dmultisample(_MainTex, i.uv);
+				// The correction lowers values, so dither the 8 bit desktop too.
+				return KatangaOutput(col, i.vertex, 1.0);
 			}
 			ENDCG
 		}
