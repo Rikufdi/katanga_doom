@@ -280,7 +280,51 @@ HRESULT __stdcall Hooked_Present(IDXGISwapChain * This,
 	ID3D11DeviceContext* pContext = nullptr;
 
 	// Hold this frame until Katanga is ready for it, which paces the game to the headset.
-	WaitForVRFrame();
+	// Not for DXGI_PRESENT_TEST: that only asks whether the window is visible and shows
+	// nothing.  Some games (Metro Exodus) call it every frame, and waiting on it too paced
+	// them at half the headset rate.
+	// Each distinct SyncInterval/Flags combination a game uses is logged once, which shows
+	// how a game presents when pacing looks wrong.
+	static UINT seenCombos[16][2];
+	static int seenCount = 0;
+	bool seen = false;
+	for (int i = 0; i < seenCount; i++)
+		seen |= seenCombos[i][0] == SyncInterval && seenCombos[i][1] == Flags;
+	if (!seen && seenCount < 16)
+	{
+		seenCombos[seenCount][0] = SyncInterval;
+		seenCombos[seenCount][1] = Flags;
+		seenCount++;
+		LogInfo(L"GamePlugin: Present(SyncInterval %u, Flags 0x%x) on swap chain %p%s\n", SyncInterval, Flags, This,
+			(Flags & DXGI_PRESENT_TEST) ? L" - test only, not paced" : L"");
+	}
+
+	// Every swap chain in the game goes through this hook, including hidden ones.  More than
+	// one presenting per frame would also pace the game at a fraction of the headset rate.
+	static IDXGISwapChain* seenChains[8];
+	static int chainCount = 0;
+	bool chainSeen = false;
+	for (int i = 0; i < chainCount; i++)
+		chainSeen |= seenChains[i] == This;
+	if (!chainSeen && chainCount < 8)
+	{
+		seenChains[chainCount++] = This;
+		DXGI_SWAP_CHAIN_DESC desc = {};
+		This->GetDesc(&desc);
+		LogInfo(L"GamePlugin: swap chain #%d %p: %ux%u, format %d, window %p, windowed %d\n", chainCount, This,
+			desc.BufferDesc.Width, desc.BufferDesc.Height, desc.BufferDesc.Format, desc.OutputWindow, desc.Windowed);
+	}
+
+	if (Flags & DXGI_PRESENT_TEST)
+	{
+		static UINT testPresents = 0;
+		if (++testPresents % 900 == 0)
+			LogInfo(L"GamePlugin: %u test Presents so far\n", testPresents);
+	}
+	else
+	{
+		WaitForVRFrame();
+	}
 
 	// 3Dmigoto shares the frames itself in this mode, we are only here for the pacing.
 	if (gPacingOnly)
