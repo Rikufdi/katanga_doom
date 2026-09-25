@@ -23,6 +23,8 @@ struct KatangaPacingInfo
 	volatile LONG presentCount;  // real game Presents so far, counted by GamePlugin; Katanga
 	                             // compares it per snapshot to see repeated or skipped frames
 	UINT64 presentRva;           // IDXGISwapChain::Present offset in dxgi.dll, 0 if unknown
+	volatile LONG noGpuWait;     // set by Katanga (--no-gpu-wait): GamePlugin only flushes the
+	                             // game's frame before pacing instead of waiting for its GPU work
 };
 
 #define KATANGA_PACING_VERSION 1

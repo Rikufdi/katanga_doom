@@ -388,8 +388,19 @@ static void FinishGameFrame(IDXGISwapChain* swapChain)
 			gFence ? L"fence" : L"flush only, no ID3D11Fence");
 	}
 
-	if (gFence != nullptr && gFenceEvent != nullptr)
+	bool noWait = NoGpuWait();
+	static int loggedMode = -1;
+	if (loggedMode != (int)noWait)
 	{
+		loggedMode = noWait;
+		LogInfo(L"GamePlugin: game frames are %s before the VR frame wait\n",
+			noWait ? L"only flushed (--no-gpu-wait)" : L"waited for on the GPU");
+	}
+
+	if (!noWait && gFence != nullptr && gFenceEvent != nullptr)
+	{
+		LARGE_INTEGER start, end, frequency;
+		QueryPerformanceCounter(&start);
 		gFenceValue++;
 		gFenceContext->Signal(gFence, gFenceValue);
 		gFenceContext->Flush();
@@ -399,6 +410,24 @@ static void FinishGameFrame(IDXGISwapChain* swapChain)
 			static UINT timeouts = 0;
 			if (timeouts++ % 100 == 0)
 				LogInfo(L"GamePlugin: game GPU frame took over 40 ms (%u times)\n", timeouts);
+		}
+
+		// How long the game waits for its GPU here, which comes out of its frame slot.
+		QueryPerformanceCounter(&end);
+		QueryPerformanceFrequency(&frequency);
+		double ms = (end.QuadPart - start.QuadPart) * 1000.0 / frequency.QuadPart;
+		static double sum = 0, worst = 0;
+		static UINT count = 0, over2 = 0, over5 = 0;
+		sum += ms;
+		worst = ms > worst ? ms : worst;
+		over2 += ms > 2.0;
+		over5 += ms > 5.0;
+		if (++count == 900)
+		{
+			LogInfo(L"GamePlugin: GPU wait over the last 900 frames: avg %.2f ms, max %.1f ms, %u over 2 ms, %u over 5 ms\n",
+				sum / count, worst, over2, over5);
+			sum = worst = 0;
+			count = over2 = over5 = 0;
 		}
 	}
 	else

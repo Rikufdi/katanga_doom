@@ -626,7 +626,13 @@ public class Game : MonoBehaviour
     [DllImport("UnityNativePlugin64")]
     [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
     private static extern bool CreatePacingOnlyFlag([MarshalAs(UnmanagedType.I1)] bool game32,
-        [MarshalAs(UnmanagedType.LPWStr)] string gamePlugin32);
+        [MarshalAs(UnmanagedType.LPWStr)] string gamePlugin32, [MarshalAs(UnmanagedType.I1)] bool noGpuWait);
+
+    // By default GamePlugin waits until the game's frame is finished on the GPU before the game
+    // waits for the VR frame, so Katanga's snapshot never races the frame's copy into the shared
+    // texture (see AGENTS.md).  --no-gpu-wait only flushes it, which leaves the game more of its
+    // frame slot, at the risk of the race when the GPU work ends right at the snapshot.
+    static readonly bool noGpuWait = KatangaArgs.Has("--no-gpu-wait");
 
     private void InjectPacer(NktProcess gameProc)
     {
@@ -639,7 +645,7 @@ public class Game : MonoBehaviour
             // finds it in a 32 bit rundll32, since Katanga itself is 64 bit.
             bool game32 = gameProc.PlatformBits == 32;
             string pacer = Path.GetFullPath(PluginsDirectory() + (game32 ? "/GamePlugin.dll" : "/GamePlugin64.dll"));
-            if (!CreatePacingOnlyFlag(game32, pacer))
+            if (!CreatePacingOnlyFlag(game32, pacer, noGpuWait))
                 throw new Exception(game32 ? "could not find the 32 bit dxgi.dll Present (32 bit probe failed)"
                                            : "could not find the dxgi.dll Present");
 
@@ -654,7 +660,8 @@ public class Game : MonoBehaviour
             // OnLoad only runs for hook handlers, so start pacing explicitly.
             object noParams = null;
             int started = _spyMgr.CallCustomApi(gameProc, pacer, "StartPacing", ref noParams, true);
-            print("Frame sync: pacing " + (started == 1 ? "active, game Present is hooked" : "NOT active, StartPacing returned " + started));
+            print("Frame sync: pacing " + (started == 1 ? "active, game Present is hooked" : "NOT active, StartPacing returned " + started)
+                + (noGpuWait ? ", game frames only flushed (--no-gpu-wait)" : ""));
         }
         catch (Exception e)
         {

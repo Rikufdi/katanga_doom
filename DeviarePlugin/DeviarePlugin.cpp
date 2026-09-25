@@ -92,6 +92,13 @@ void CountGamePresent()
 		InterlockedIncrement(&view->presentCount);
 }
 
+// Katanga's --no-gpu-wait, read live from the pacing mapping.
+bool NoGpuWait()
+{
+	KatangaPacingInfo* view = gPacingView;
+	return view != nullptr && view->noGpuWait != 0;
+}
+
 
 //-----------------------------------------------------------
 

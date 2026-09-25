@@ -221,7 +221,7 @@ static bool RunPresentProbe32(const wchar_t* gamePlugin32)
 }
 
 // Returns true when the mapping holds a usable Present offset for the game's bitness.
-extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreatePacingOnlyFlag(bool game32, const wchar_t* gamePlugin32)
+extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreatePacingOnlyFlag(bool game32, const wchar_t* gamePlugin32, bool noGpuWait)
 {
 	KatangaPacingInfo info = {};
 	if (!game32 && !KatangaFindPresent(&info))
@@ -242,6 +242,7 @@ extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreatePacingOnlyFlag(
 	if (game32 && (gamePlugin32 == nullptr || !RunPresentProbe32(gamePlugin32)))
 		((KatangaPacingInfo*)view)->presentRva = 0;
 	bool usable = ((KatangaPacingInfo*)view)->presentRva != 0;
+	((KatangaPacingInfo*)view)->noGpuWait = noGpuWait ? 1 : 0;   // after the probe, which rewrites the block
 
 	// Kept mapped, to read the game's frame counter per snapshot (GamePresentCount).
 	if (s_PacingView != nullptr)
