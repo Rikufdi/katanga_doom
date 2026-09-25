@@ -194,8 +194,20 @@ in `katanga_options.txt` next to `katanga.exe` (3DFixManager passes fixed argume
 | D: + `--isolate-spinner` | 17.5 / 2.1 | ≈ 0 |
 | E: `--no-frame-sync`, 3DFM limiter at headset Hz | 15.8 / 4.5 | ~8% of frames |
 
+| F: frame sync at **72 Hz** (slot 13.9 ms) | missed slot 7.1/min (outside two throttles) | ≈ 0 |
+| G: frame sync at **72 Hz**, 8 min | missed slot 4.2/min, >25 ms 1.9 | ≈ 0 |
+
 None of the CPU options gave the game measurable headroom; the differences are within session to
-session variation. Turning pacing off did not reduce the game's slow frames either (the driver's
+session variation. **A lower headset refresh rate does help**: at 72 Hz the game misses its slot
+roughly a third as often as at 90 Hz, because each frame gets 13.9 ms instead of 11.1 ms.
+
+The occasional **major slowdown** (seconds of exactly 100 ms Katanga frames, pacing drops out) is
+Virtual Desktop's runtime holding Katanga back. The headset's logcat shows the effect, not the
+cause: the decoder's input rate falls (72 → ~50/s), stale frames appear and VD's predicted latency
+jumps (59 → 82 ms). It comes and goes between sessions (two in 4 minutes, none in 8), which points
+at something external such as Wi-Fi retransmissions or an encoder stall. Catch one with Q3Diag
+running (`local/tools/pacing/q3diag_session.py`) to see the Wi-Fi and encoder numbers at that
+moment. Turning pacing off did not reduce the game's slow frames either (the driver's
 frame queue is back then), so the remaining stutters are the game's own work and a frame queue in
 Katanga would only add latency. A lower headset refresh rate gives each game frame more time.
 Keep the options for games that load every core, and remeasure there.
