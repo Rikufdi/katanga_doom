@@ -118,6 +118,16 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
 - `ScreenImage` takes **one** snapshot of the side-by-side image before cutting the eyes. Two reads
   of the shared texture let the game's write land between them, and the eyes then show different
   frames ("two frames mixed"), which pacing made happen every frame.
+- **The game's frame must be finished on the GPU before the hook waits.** The copy into the shared
+  texture (3Dmigoto's, or GamePlugin's own) sits in the game's D3D11 command buffer until `Present`
+  flushes it, and the hook waits at the top of `Present`. Without anything else, the release let
+  that copy and Katanga's snapshot start on the GPU together, and whichever ran first decided
+  whether the headset got the new frame or the previous one. The stutter followed scene load
+  (Metro Exodus: always at the same spot when turning, worse in foliage) while the frame count
+  looked perfect. The hook now copies, flushes, waits on an `ID3D11Fence` until the GPU is done,
+  counts the frame and only then waits for the VR frame. `katanga.log` says `game frames finish
+  on the GPU before the VR frame wait (fence)`. In PresentMon the game's `MsRenderPresentLatency`
+  fell from ~1.6 ms to ~0.2 ms.
 - For `DX11Exe` (3Dmigoto) games Katanga injects GamePlugin in **pacing only mode**: it loads it
   with `LoadCustomDll` (not unloaded on exit, so the hook never points at freed code) and calls the
   exported `StartPacing` through `CallCustomApi`, because `OnLoad` only runs for DLLs attached to a
@@ -151,6 +161,11 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
   - `Player.log` holds Unity output and the OpenXR diagnostic report (runtime, per-eye
     resolution). It has timestamped `Hitch: N ms frame` lines for frames over 25 ms,
     `Slow GC.Collect` lines, and timestamped environment, sharpening and hint changes.
+    With frame sync it counts game frames per headset frame (GamePlugin increments `presentCount`
+    in the pacing mapping once a frame is finished, Katanga reads it before each snapshot):
+    `Game frames last 5 s: N new, N stale (repeated), N skipped` every 5 s, plus a timestamped
+    `Stale frame` line at most once a second. This is the direct measure of judder; 0 stale at
+    `Hz × 5` new is perfect.
   - `katanga.log` is native plugin logging. `WAIT_TIMEOUT` there means the per-frame mutex stalled.
     One `ReleaseMutex ERROR_NOT_OWNER` per frame is expected (a deliberate double release).
 - **Frame timing:** PresentMon on `katanga.exe` gives Katanga's own frame times, because Unity
@@ -165,7 +180,8 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
     `PresentMon --terminate_existing_session --session_name <name>`, not by killing the process.
 - **Judging pacing from present times is only valid when the game presents before Katanga's
   image snapshot.** With the game released right after the snapshot, it presents in the middle of
-  Katanga's frame, and comparing present times shows fake repeat/skip pairs. Trust the headset.
+  Katanga's frame, and comparing present times shows fake repeat/skip pairs. Use the `Game frames`
+  lines in `Player.log` instead, and trust the headset.
 - **Unreal Engine games drop to 3 fps whenever their window is not in the foreground**, for
   example when alt-tabbing out during a test. Ignore those stretches.
 - **Patterns to recognise:**
