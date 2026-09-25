@@ -80,6 +80,18 @@ HANDLE gFrameEvent = NULL;
 // KatangaPacing mapping (Shared/KatangaPacing.h) and calling StartPacing.
 bool gPacingOnly = false;
 
+// The KatangaPacing mapping, kept mapped for the frame counter.
+static KatangaPacingInfo* volatile gPacingView = nullptr;
+
+// Called for every real (not DXGI_PRESENT_TEST) Present: 3Dmigoto has copied this frame to the
+// shared texture by then.  Katanga compares the count per snapshot.
+void CountGamePresent()
+{
+	KatangaPacingInfo* view = gPacingView;
+	if (view != nullptr)
+		InterlockedIncrement(&view->presentCount);
+}
+
 
 //-----------------------------------------------------------
 
@@ -269,16 +281,21 @@ int WINAPI StartPacing()
 
 	// Katanga publishes where the real dxgi Present is.  No mapping, no pacing only mode.
 	KatangaPacingInfo info = {};
-	HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, KATANGA_PACING_MAPPING);
+	HANDLE mapping = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, KATANGA_PACING_MAPPING);
 	if (mapping == NULL)
 		return 0;
-	void* view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(info));
-	if (view != nullptr)
-	{
-		memcpy(&info, view, sizeof(info));
-		UnmapViewOfFile(view);
-	}
-	CloseHandle(mapping);
+	void* view = MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(info));
+	CloseHandle(mapping);   // the view keeps the mapping alive
+	if (view == nullptr)
+		return 0;
+	memcpy(&info, view, sizeof(info));
+
+	// Kept mapped: every real Present bumps presentCount, and Katanga checks per snapshot
+	// whether it got a new frame.  A restarted Katanga makes a new mapping, so swap views.
+	KatangaPacingInfo* old = gPacingView;
+	gPacingView = (KatangaPacingInfo*)view;
+	if (old != nullptr)
+		UnmapViewOfFile(old);
 	gPacingOnly = true;
 
 	if (gFrameEvent == NULL)

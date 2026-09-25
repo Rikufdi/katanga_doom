@@ -20,7 +20,8 @@ struct KatangaPacingInfo
 	UINT32 version;              // KATANGA_PACING_VERSION
 	UINT32 dxgiTimeDateStamp;    // IMAGE_FILE_HEADER.TimeDateStamp of dxgi.dll
 	UINT32 dxgiSizeOfImage;      // IMAGE_OPTIONAL_HEADER.SizeOfImage of dxgi.dll
-	UINT32 reserved;
+	volatile LONG presentCount;  // real game Presents so far, counted by GamePlugin; Katanga
+	                             // compares it per snapshot to see repeated or skipped frames
 	UINT64 presentRva;           // IDXGISwapChain::Present offset in dxgi.dll, 0 if unknown
 };
 

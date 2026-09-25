@@ -91,6 +91,7 @@ public class ScreenImage : MonoBehaviour
         if (sourceIsLive)
         {
             source = Snapshot(source);
+            TrackFrameDelivery();
 
             // We have this frame's image, the game can start on its next one.
             LaunchAndPlay.GameFrameTaken();
@@ -112,6 +113,55 @@ public class ScreenImage : MonoBehaviour
         material.SetTexture("_LeftTex", leftEye);
         material.SetTexture("_RightTex", rightEye);
         material.EnableKeyword("EYE_TEXTURES");
+    }
+
+    // Did each snapshot get a new game frame?  GamePlugin counts the game's real Presents in the
+    // pacing mapping.  Per snapshot: +1 is a new frame, +0 means no new frame arrived in time and
+    // the headset shows the last one again (a stale frame), +2 or more means frames were never
+    // shown.  Summary every 5 s, and a timestamp for stale frames at most once a second.
+
+    [System.Runtime.InteropServices.DllImport("UnityNativePlugin64")]
+    private static extern int GamePresentCount();
+
+    int lastPresentCount = -1;
+    int freshFrames, staleFrames, skippedFrames;
+    float nextSummary, nextStaleLog;
+
+    void TrackFrameDelivery()
+    {
+        int count = GamePresentCount();
+        if (count < 0)
+            return;   // no pacing mapping, e.g. frame sync off
+        if (lastPresentCount < 0 || count < lastPresentCount)
+        {
+            lastPresentCount = count;
+            nextSummary = Time.realtimeSinceStartup + 5.0f;
+            return;
+        }
+
+        int delta = count - lastPresentCount;
+        lastPresentCount = count;
+        if (delta == 1)
+            freshFrames++;
+        else if (delta == 0)
+        {
+            staleFrames++;
+            if (Time.realtimeSinceStartup >= nextStaleLog)
+            {
+                print(String.Format("[{0:HH:mm:ss.fff}] Stale frame: no new game frame for this headset frame", DateTime.Now));
+                nextStaleLog = Time.realtimeSinceStartup + 1.0f;
+            }
+        }
+        else
+            skippedFrames += delta - 1;
+
+        if (Time.realtimeSinceStartup >= nextSummary)
+        {
+            print(String.Format("[{0:HH:mm:ss.fff}] Game frames last 5 s: {1} new, {2} stale (repeated), {3} skipped",
+                DateTime.Now, freshFrames, staleFrames, skippedFrames));
+            freshFrames = staleFrames = skippedFrames = 0;
+            nextSummary = Time.realtimeSinceStartup + 5.0f;
+        }
     }
 
     private void OnDestroy()

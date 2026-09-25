@@ -323,6 +323,7 @@ HRESULT __stdcall Hooked_Present(IDXGISwapChain * This,
 	}
 	else
 	{
+		CountGamePresent();
 		WaitForVRFrame();
 	}
 

@@ -59,6 +59,7 @@ void ReleaseSetupMutex();
 void CreateFileMappedIPC();
 void CaptureSetupMutex();
 void WaitForVRFrame();
+void CountGamePresent();
 void HookPresentAt(BYTE* present);
 int WINAPI StartPacing();
 void OpenLogFile();

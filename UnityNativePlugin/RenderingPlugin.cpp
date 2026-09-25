@@ -164,6 +164,7 @@ extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API DestroySetupMutex()
 
 static HANDLE s_FrameEvent = NULL;
 static HANDLE s_PacingOnlyFlag = NULL;
+static KatangaPacingInfo* s_PacingView = nullptr;
 
 extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreateFrameEvent()
 {
@@ -242,8 +243,19 @@ extern "C" UNITY_INTERFACE_EXPORT bool UNITY_INTERFACE_API CreatePacingOnlyFlag(
 		((KatangaPacingInfo*)view)->presentRva = 0;
 	bool usable = ((KatangaPacingInfo*)view)->presentRva != 0;
 
-	UnmapViewOfFile(view);
+	// Kept mapped, to read the game's frame counter per snapshot (GamePresentCount).
+	if (s_PacingView != nullptr)
+		UnmapViewOfFile(s_PacingView);
+	s_PacingView = (KatangaPacingInfo*)view;
 	return usable;
+}
+
+// Real Presents the game has made so far, counted by GamePlugin in pacing only mode.
+// -1 when there is no pacing mapping.  Katanga compares it per snapshot: +1 a new frame,
+// +0 the same frame again (a stale frame in the headset), +2 or more frames skipped.
+extern "C" UNITY_INTERFACE_EXPORT int UNITY_INTERFACE_API GamePresentCount()
+{
+	return s_PacingView != nullptr ? (int)s_PacingView->presentCount : -1;
 }
 
 extern "C" UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API OpenFileMappedIPC()
