@@ -45,6 +45,7 @@ public class Game : MonoBehaviour
     // CPU headroom for the game, both off by default.  See ApplyCpuTuning.
     public static int cpuIsolationCores = 0;     // --cpu-isolation [cores]
     public static bool raiseGamePriority = false; // --game-priority
+    public static bool isolateSpinner = false;    // --isolate-spinner
 
     // Only set if we have no input params, to show desktop duplication.
     bool desktopMode = false;
@@ -164,6 +165,11 @@ public class Game : MonoBehaviour
             {
                 raiseGamePriority = true;
                 print("--game-priority");
+            }
+            else if (args[i] == "--isolate-spinner")
+            {
+                isolateSpinner = true;
+                print("--isolate-spinner");
             }
             else if (args[i] == "--game-path")
             {
@@ -559,12 +565,17 @@ public class Game : MonoBehaviour
     // runtime spins a full core inside our process for exact frame timing.  --cpu-isolation
     // keeps all of Katanga on the last physical core(s) and the game on all the others;
     // --game-priority puts the game above normal so background programs yield to it.
+    // --isolate-spinner gives only the runtime's spinning thread a logical CPU of its own.
 
     [DllImport("UnityNativePlugin64")]
     private static extern ulong ApplyCpuIsolation(int reserveCores, uint gamePid, out ulong gameMask);
     [DllImport("UnityNativePlugin64")]
     [return: MarshalAs(UnmanagedType.I1)]   // C++ bool is one byte
     private static extern bool RaiseGamePriority(uint gamePid);
+    [DllImport("UnityNativePlugin64")]
+    private static extern void StartSpinnerIsolation(uint gamePid);
+    [DllImport("UnityNativePlugin64")]
+    private static extern int SpinnerIsolationResult(out int spinners, out ulong spinnerCpu);
 
     private void ApplyCpuTuning(NktProcess gameProc)
     {
@@ -582,6 +593,29 @@ public class Game : MonoBehaviour
 
         if (raiseGamePriority)
             print("Game priority: " + (RaiseGamePriority((uint)gameProc.Id) ? "above normal" : "could not be raised"));
+
+        if (isolateSpinner)
+        {
+            StartSpinnerIsolation((uint)gameProc.Id);
+            StartCoroutine(ReportSpinnerIsolation());
+        }
+    }
+
+    // The spinner is measured in the background, a few seconds at most.
+    private IEnumerator ReportSpinnerIsolation()
+    {
+        int state;
+        int spinners;
+        ulong cpu;
+        while ((state = SpinnerIsolationResult(out spinners, out cpu)) == 0)
+            yield return new WaitForSecondsRealtime(0.5f);
+
+        if (state == 1)
+            print(String.Format("Spinner isolation: {0} spinning thread(s) on logical CPU 0x{1:X}, Katanga's other threads and the game kept off it", spinners, cpu));
+        else if (state == 2)
+            print("Spinner isolation: no spinning thread found, nothing changed");
+        else
+            print("Spinner isolation: not possible here");
     }
 
 
