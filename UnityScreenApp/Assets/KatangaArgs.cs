@@ -12,7 +12,19 @@ public static class KatangaArgs
 {
     public const string OptionsFile = "katanga_options.txt";
 
+    // Next to katanga.exe.
+    public static string OptionsPath
+    {
+        get { return Path.Combine(Path.GetDirectoryName(Environment.GetCommandLineArgs()[0]) ?? "", OptionsFile); }
+    }
+
     static string[] all;
+
+    // After the options window has rewritten the file.
+    public static void Reload()
+    {
+        all = null;
+    }
 
     public static string[] All
     {
@@ -23,8 +35,7 @@ public static class KatangaArgs
                 var list = new List<string>(Environment.GetCommandLineArgs());
                 try
                 {
-                    string exeFolder = Path.GetDirectoryName(list[0]);
-                    string file = Path.Combine(exeFolder ?? "", OptionsFile);
+                    string file = OptionsPath;
                     if (File.Exists(file))
                     {
                         foreach (string line in File.ReadAllLines(file))

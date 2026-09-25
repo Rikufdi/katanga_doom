@@ -249,6 +249,11 @@ at least 1–2 s after each level change.
 
 - **Slideshow mode:** run `katanga.exe` with no arguments. Hold Ctrl while starting it to get a
   file picker for a game exe instead.
+- **Options window:** hold Shift while starting `katanga.exe` (standalone or from 3DFixManager).
+  It replaces the Shift/Alt "Screen Selector" of older Unity players, which Unity 6 no longer has.
+  It shows every option in `katanga_options.txt` with an explanation, before XR or the game start,
+  and rewrites that file (options it doesn't know are kept). The texts are in `KatangaOptions.cs`,
+  the window in `UnityNativePlugin/OptionsDialog.cpp`. New options belong in that list.
 - **Logs** (in `%USERPROFILE%\AppData\LocalLow\Katanga\Katanga\`):
   - `Player.log` holds Unity output and the OpenXR diagnostic report (runtime, per-eye
     resolution). It has timestamped `Hitch: N ms frame` lines for frames over 25 ms,

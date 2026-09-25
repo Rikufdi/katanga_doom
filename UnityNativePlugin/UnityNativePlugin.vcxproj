@@ -234,6 +234,7 @@
     <ClCompile Include="RenderingPlugin.cpp" />
     <ClCompile Include="DriverProfile.cpp" />
     <ClCompile Include="CpuIsolation.cpp" />
+    <ClCompile Include="OptionsDialog.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="RenderingPlugin.def" />
