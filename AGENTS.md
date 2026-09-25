@@ -276,6 +276,28 @@ viewer, the chart's 3840 px per eye squeezed ~2.4x onto the 2064 px panel.
   not PRISM.
 - The two eyes are cut from the side-by-side image exactly; no misalignment.
 
+### Supersampling in the game (DSR/DLDSR)
+
+Works with this Katanga (the old one lost the frame capture with DSR). The shared texture simply
+takes the game's back buffer size; Katanga reopens it when the game switches resolution. Limit: a
+D3D11 texture is at most 16384 wide and holds both eyes, so at most 8192 per eye (DLDSR 2.25x on
+4K, 5760 or 6144 wide, fits; DSR 4x on 4K is 7680, just fits).
+
+Castlevania: Lords of Shadow (dgVoodoo + 3Dmigoto): **DLDSR 2.25x (6144x3240 per eye), in-game AA
+at max, dgVoodoo MSAA off**: GPU wait ~4 ms, 1.8% repeated frames, "splendid". With dgVoodoo's
+MSAA 4x on top the GPU wait was ~10 ms and heavy scenes dropped to ~40 fps: DLDSR and MSAA overlap,
+and Katanga's scaling to the panel smooths edges further, so MSAA isn't worth it there.
+
+Traps:
+- DLDSR needs the game to render at that resolution. A windowed or borderless game can't be
+  larger than the desktop; use exclusive fullscreen in the game, or set the desktop to the DLDSR
+  resolution.
+- **Exclusive fullscreen plus 3DFixManager's forced vsync locks the game to the monitor's refresh**
+  (59-60 fps on a 60 Hz TV against the 72 Hz headset: every sixth frame repeated, steady judder;
+  `katanga.log` shows almost no Presents "held for the VR frame"). Windowed games aren't affected.
+  Fix: an NVIDIA program profile for the game exe with Vertical sync Off.
+- The GPU wait in `katanga.log` is the budget meter: under ~6 ms at 72 Hz leaves headroom.
+
 ## Testing and measuring
 
 - **Slideshow mode:** run `katanga.exe` with no arguments. Hold Ctrl while starting it to get a
