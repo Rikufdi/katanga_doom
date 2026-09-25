@@ -169,6 +169,12 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
     3DFixManager above).
   - The game at 144 fps and GPU near 100% with "frame sync on": pacing is not reaching the game's
     `Present`. Check `katanga.log` for `first paced Present`.
+  - Long stutters right after `Controller left/right connected` lines: Quest controllers sleep when
+    put down and reconnect often. `ControllerModel` used to rebuild the glTF model on every
+    reconnect; it now keeps it. Compare those timestamped lines with the `Hitch` lines.
+  - Short stutters when the game spawns NPCs, streams in areas or saves: the game's own CPU work
+    (PresentMon shows high `MsCPUBusy` for the game, Katanga's frames stay clean). With frame sync
+    a late game frame shows as one repeated frame. Not something Katanga can fix.
 
 ## Known issues
 
