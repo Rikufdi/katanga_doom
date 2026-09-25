@@ -176,6 +176,30 @@ because it doesn't know when the headset refreshes. Katanga instead makes the ga
     (PresentMon shows high `MsCPUBusy` for the game, Katanga's frames stay clean). With frame sync
     a late game frame shows as one repeated frame. Not something Katanga can fix.
 
+## CPU headroom experiments (Little Nightmares II, 5 min runs, same section)
+
+Virtual Desktop's OpenXR runtime spins one thread inside Katanga at a full core, for exact frame
+delivery; Katanga itself uses very little CPU. These options exist, all off by default, and can go
+in `katanga_options.txt` next to `katanga.exe` (3DFixManager passes fixed arguments):
+
+- `--cpu-isolation N`: Katanga, spinner included, on the last N physical cores, the game on the rest.
+- `--isolate-spinner`: only the spinning thread gets a logical CPU of its own (found by measuring on
+  a background thread; sampling on the main thread stops the runtime spinning).
+- `--game-priority`: the game above normal priority.
+
+| Run | Game frames >15 ms / >25 ms per min | Headset repeats/skips |
+|---|---|---|
+| A: frame sync, no options | 12.6 / 1.6 | ≈ 0 |
+| B: + `--cpu-isolation 1 --game-priority` | 11.8 / 2.5 | ≈ 0 |
+| D: + `--isolate-spinner` | 17.5 / 2.1 | ≈ 0 |
+| E: `--no-frame-sync`, 3DFM limiter at headset Hz | 15.8 / 4.5 | ~8% of frames |
+
+None of the CPU options gave the game measurable headroom; the differences are within session to
+session variation. Turning pacing off did not reduce the game's slow frames either (the driver's
+frame queue is back then), so the remaining stutters are the game's own work and a frame queue in
+Katanga would only add latency. A lower headset refresh rate gives each game frame more time.
+Keep the options for games that load every core, and remeasure there.
+
 ## Known issues
 
 - Toggling sharpening is followed about 1.3 s later by a ~50 ms + ~95 ms hitch. The cause is not
