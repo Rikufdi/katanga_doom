@@ -28,6 +28,7 @@
 
 #include "DeviarePlugin.h"
 
+#include <d3d11_4.h>
 #include <thread>
 
 
@@ -269,16 +270,13 @@ HRESULT (__stdcall *pOrigPresent)(IDXGISwapChain * This,
 // update the double-wide stereo surface gGameTexture.  In Automatic mode, we
 // just copy the double wide stereo backbuffer directly.
 
+static void FinishGameFrame(IDXGISwapChain* swapChain);
+static void CopyToSharedTexture(IDXGISwapChain* This);
+
 HRESULT __stdcall Hooked_Present(IDXGISwapChain * This,
 	/* [in] */ UINT SyncInterval,
 	/* [in] */ UINT Flags)
 {
-	HRESULT hr;
-	ID3D11Texture2D* backBuffer = nullptr;
-	D3D11_TEXTURE2D_DESC pDesc;
-	ID3D11Device* pDevice = nullptr;
-	ID3D11DeviceContext* pContext = nullptr;
-
 	// Hold this frame until Katanga is ready for it, which paces the game to the headset.
 	// Not for DXGI_PRESENT_TEST: that only asks whether the window is visible and shows
 	// nothing.  Some games (Metro Exodus) call it every frame, and waiting on it too paced
@@ -320,16 +318,108 @@ HRESULT __stdcall Hooked_Present(IDXGISwapChain * This,
 		static UINT testPresents = 0;
 		if (++testPresents % 900 == 0)
 			LogInfo(L"GamePlugin: %u test Presents so far\n", testPresents);
+		if (gPacingOnly)
+			return pOrigPresent(This, SyncInterval, Flags);
 	}
-	else
+
+	// 3Dmigoto shares the frames itself in pacing only mode, we are only here for the pacing.
+	if (!gPacingOnly)
+		CopyToSharedTexture(This);
+
+	if (!(Flags & DXGI_PRESENT_TEST))
 	{
+		// The shared image must be complete before Katanga takes it.  See FinishGameFrame.
+		FinishGameFrame(This);
 		CountGamePresent();
 		WaitForVRFrame();
 	}
 
-	// 3Dmigoto shares the frames itself in this mode, we are only here for the pacing.
-	if (gPacingOnly)
-		return pOrigPresent(This, SyncInterval, Flags);
+	return pOrigPresent(This, SyncInterval, Flags);
+}
+
+// Before the pacing wait, get the frame's GPU work done: the copy into the shared texture
+// (3Dmigoto's or ours) is still in the game's D3D11 command buffer until Present flushes it,
+// and Present only runs after the wait.  Katanga's snapshot and that copy then started on the
+// GPU at the same moment, and whichever ran first decided whether the headset got the new
+// frame or the last one again: stutter that came and went with how heavy the scene was.
+// So flush, and wait on a fence until the GPU has finished.  Without ID3D11Fence (before
+// Windows 10 1703) the flush alone at least gets the work started a frame slot early.
+
+static ID3D11Device* gFenceDevice = nullptr;
+static ID3D11DeviceContext4* gFenceContext = nullptr;
+static ID3D11Fence* gFence = nullptr;
+static HANDLE gFenceEvent = nullptr;
+static UINT64 gFenceValue = 0;
+
+static void FinishGameFrame(IDXGISwapChain* swapChain)
+{
+	ID3D11Device* device = nullptr;
+	if (FAILED(swapChain->GetDevice(__uuidof(ID3D11Device), (void**)&device)))
+		return;   // not a D3D11 swap chain
+
+	if (device != gFenceDevice)
+	{
+		if (gFence) gFence->Release();
+		if (gFenceContext) gFenceContext->Release();
+		if (gFenceDevice) gFenceDevice->Release();
+		gFence = nullptr;
+		gFenceContext = nullptr;
+		gFenceDevice = device;
+		gFenceDevice->AddRef();
+		if (gFenceEvent == nullptr)
+			gFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+		ID3D11Device5* device5 = nullptr;
+		ID3D11DeviceContext* context = nullptr;
+		device->GetImmediateContext(&context);
+		if (SUCCEEDED(device->QueryInterface(__uuidof(ID3D11Device5), (void**)&device5)))
+		{
+			if (SUCCEEDED(device5->CreateFence(0, D3D11_FENCE_FLAG_NONE, __uuidof(ID3D11Fence), (void**)&gFence)))
+				context->QueryInterface(__uuidof(ID3D11DeviceContext4), (void**)&gFenceContext);
+			device5->Release();
+		}
+		if (gFenceContext == nullptr && gFence != nullptr)
+		{
+			gFence->Release();
+			gFence = nullptr;
+		}
+		context->Release();
+		LogInfo(L"GamePlugin: game frames finish on the GPU before the VR frame wait (%s)\n",
+			gFence ? L"fence" : L"flush only, no ID3D11Fence");
+	}
+
+	if (gFence != nullptr && gFenceEvent != nullptr)
+	{
+		gFenceValue++;
+		gFenceContext->Signal(gFence, gFenceValue);
+		gFenceContext->Flush();
+		if (SUCCEEDED(gFence->SetEventOnCompletion(gFenceValue, gFenceEvent)) &&
+			WaitForSingleObject(gFenceEvent, 40) == WAIT_TIMEOUT)
+		{
+			static UINT timeouts = 0;
+			if (timeouts++ % 100 == 0)
+				LogInfo(L"GamePlugin: game GPU frame took over 40 ms (%u times)\n", timeouts);
+		}
+	}
+	else
+	{
+		ID3D11DeviceContext* context = nullptr;
+		device->GetImmediateContext(&context);
+		context->Flush();
+		context->Release();
+	}
+	device->Release();
+}
+
+// Our own copy of the game's stereo back buffer into the shared texture, for games we
+// share frames from ourselves (not 3Dmigoto DirectConnection).
+static void CopyToSharedTexture(IDXGISwapChain* This)
+{
+	HRESULT hr;
+	ID3D11Texture2D* backBuffer = nullptr;
+	D3D11_TEXTURE2D_DESC pDesc;
+	ID3D11Device* pDevice = nullptr;
+	ID3D11DeviceContext* pContext = nullptr;
 
 	// This only happens for first device creation, because we inject into an already
 	// setup game, and thus first thing we'll see is Present.
@@ -366,11 +456,8 @@ HRESULT __stdcall Hooked_Present(IDXGISwapChain * This,
 		pContext->Release();
 		pDevice->Release();
 	}
-	backBuffer->Release();
-
-	HRESULT hrp = pOrigPresent(This, SyncInterval, Flags);
-
-	return hrp;
+	if (backBuffer)
+		backBuffer->Release();
 }
 
 

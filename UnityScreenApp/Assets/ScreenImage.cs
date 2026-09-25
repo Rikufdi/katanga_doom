@@ -90,8 +90,9 @@ public class ScreenImage : MonoBehaviour
         // whole side-by-side image first, and cut both eyes from that.
         if (sourceIsLive)
         {
-            source = Snapshot(source);
+            // Count first: a frame counted before the snapshot is queued is complete on the GPU.
             TrackFrameDelivery();
+            source = Snapshot(source);
 
             // We have this frame's image, the game can start on its next one.
             LaunchAndPlay.GameFrameTaken();
@@ -116,7 +117,7 @@ public class ScreenImage : MonoBehaviour
     }
 
     // Did each snapshot get a new game frame?  GamePlugin counts the game's real Presents in the
-    // pacing mapping.  Per snapshot: +1 is a new frame, +0 means no new frame arrived in time and
+    // pacing mapping, once the frame has finished on the GPU.  Per snapshot: +1 is a new frame, +0 means no new frame arrived in time and
     // the headset shows the last one again (a stale frame), +2 or more means frames were never
     // shown.  Summary every 5 s, and a timestamp for stale frames at most once a second.
 
